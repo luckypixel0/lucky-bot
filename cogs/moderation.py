@@ -138,35 +138,7 @@ class Moderation(commands.Cog):
     #   LOG HELPERS
     # ══════════════════════════════════════════
 
-    async def send_log(self, guild, embed):
-    # Moderation gets its own private mod-logs channel
-    log_channel = discord.utils.get(guild.text_channels, name='mod-logs')
-    if log_channel:
-        try:
-            await log_channel.send(embed=embed)
-        except:
-            pass
-    async def send_log(self, guild, embed):
-    # Security gets its own security-logs channel
-    log_channel = discord.utils.get(guild.text_channels, name='security-logs')
-    if log_channel:
-        try:
-            await log_channel.send(embed=embed)
-        except:
-            pass
-
-    def log_embed(self, title, color, **fields):
-        embed = discord.Embed(
-            title=title, color=color,
-            timestamp=datetime.datetime.utcnow()
-        )
-        for name, value in fields.items():
-            embed.add_field(
-                name=name.replace('_', ' ').title(),
-                value=str(value), inline=True
-            )
-        embed.set_footer(text="Lucky Bot Logs")
-        return embed
+    
 
     # ══════════════════════════════════════════
     #   SHARED COMMAND LOGIC
