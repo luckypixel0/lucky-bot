@@ -56,6 +56,11 @@ async def on_ready():
         )
     )
 
+#--ping---------------------------
+@bot.command()    
+async def ping(ctx):
+    await ctx.reply(f'🏓pong! ahh micky dheere!!! `{round(bot.latency * 1000)}ms`')
+    
 # ── Load Cogs and Start ────────────────────────
 async def main():
     async with bot:
