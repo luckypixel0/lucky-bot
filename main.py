@@ -10,10 +10,7 @@ app = Flask('')
 def home():
     return "Lucky Bot is alive! 🍀"
 
-def run():
-    app.run(host='0.0.0.0', port=8080)
-
-Thread(target=run, daemon=True).start()
+Thread(target=lambda: app.run(host='0.0.0.0', port=8080), daemon=True).start()
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
@@ -27,4 +24,10 @@ async def on_ready():
 async def ping(ctx):
     await ctx.reply(f'🏓 Pong! `{round(bot.latency * 1000)}ms`')
 
-bot.run(os.environ['DISCORD_TOKEN'])
+async def main():
+    async with bot:
+        await bot.load_extension('cogs.moderation')
+        await bot.start(os.environ['DISCORD_TOKEN'])
+
+import asyncio
+asyncio.run(main())
