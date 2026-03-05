@@ -27,4 +27,4 @@ async def on_ready():
 async def ping(ctx):
     await ctx.reply(f'🏓 Pong! `{round(bot.latency * 1000)}ms`')
 
-bot.run(os.environ['DISCORD-TOKEN'])
+bot.run(os.environ['DISCORD_TOKEN'])
