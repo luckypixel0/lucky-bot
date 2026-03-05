@@ -139,15 +139,21 @@ class Moderation(commands.Cog):
     # ══════════════════════════════════════════
 
     async def send_log(self, guild, embed):
-        log_channel = (
-            discord.utils.get(guild.text_channels, name='mod-logs') or
-            discord.utils.get(guild.text_channels, name='logs')
-        )
-        if log_channel:
-            try:
-                await log_channel.send(embed=embed)
-            except:
-                pass
+    # Moderation gets its own private mod-logs channel
+    log_channel = discord.utils.get(guild.text_channels, name='mod-logs')
+    if log_channel:
+        try:
+            await log_channel.send(embed=embed)
+        except:
+            pass
+    async def send_log(self, guild, embed):
+    # Security gets its own security-logs channel
+    log_channel = discord.utils.get(guild.text_channels, name='security-logs')
+    if log_channel:
+        try:
+            await log_channel.send(embed=embed)
+        except:
+            pass
 
     def log_embed(self, title, color, **fields):
         embed = discord.Embed(
