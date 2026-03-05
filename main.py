@@ -65,6 +65,7 @@ bot.no_prefix_users = no_prefix_users
 # ══════════════════════════════════════════════
 
 COGS = [
+    'cogs.help',         # ← add this FIRST so help loads first
     'cogs.moderation',
     'cogs.security',
     # 'cogs.tickets',
@@ -106,7 +107,7 @@ async def on_ready():
         status=discord.Status.online,
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name="over the server 👁️ | !help"
+            name="bilota is working in this app 😼 | uss !help for more info "
         )
     )
 
@@ -324,54 +325,6 @@ async def prefix_slash(interaction: discord.Interaction):
     embed = discord.Embed(title="⚙️ Current Prefix", color=0x3498db)
     embed.add_field(name="Prefix", value=f"`{current}`")
     embed.add_field(name="Example", value=f"`{current}ping`")
-    await interaction.response.send_message(embed=embed)
-
-# ── HELP ──────────────────────────────────────
-@bot.command(name='help')
-async def help_prefix(ctx, category: str = None):
-    prefix = custom_prefixes.get(ctx.guild.id if ctx.guild else None, '!')
-    embed = discord.Embed(
-        title="🍀 Lucky Bot — Command Menu",
-        description=f"Current prefix: `{prefix}` | Also works with `/`",
-        color=0x2ecc71
-    )
-    embed.add_field(name="🛡️ Moderation", value=f"`{prefix}help mod`", inline=True)
-    embed.add_field(name="🔒 Security", value=f"`{prefix}help security`", inline=True)
-    embed.add_field(name="🎫 Tickets", value=f"`{prefix}help tickets`", inline=True)
-    embed.add_field(name="🎵 Music", value=f"`{prefix}help music`", inline=True)
-    embed.add_field(name="🎮 Games", value=f"`{prefix}help games`", inline=True)
-    embed.add_field(name="😂 Fun", value=f"`{prefix}help fun`", inline=True)
-    embed.add_field(name="💰 Economy", value=f"`{prefix}help economy`", inline=True)
-    embed.add_field(name="⭐ Leveling", value=f"`{prefix}help level`", inline=True)
-    embed.add_field(name="🎁 Giveaway", value=f"`{prefix}help giveaway`", inline=True)
-    embed.add_field(
-        name="⚙️ Settings",
-        value=(
-            f"`{prefix}setprefix` — change prefix\n"
-            f"`{prefix}noprefix` — no-prefix mode\n"
-            f"`{prefix}extraowner` — extra owners"
-        ),
-        inline=False
-    )
-    embed.set_thumbnail(url=bot.user.display_avatar.url)
-    embed.set_footer(text="Lucky Bot • lucky.unaux.com")
-    await ctx.send(embed=embed)
-
-@bot.tree.command(name='help', description='Show all Lucky Bot commands')
-async def help_slash(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="🍀 Lucky Bot — Command Menu",
-        description="Use `/` or `!` for all commands",
-        color=0x2ecc71
-    )
-    embed.add_field(name="🛡️ Moderation", value="warn, mute, ban, kick, purge...", inline=True)
-    embed.add_field(name="🔒 Security", value="antinuke, antiraid, antispam...", inline=True)
-    embed.add_field(name="🎫 Tickets", value="ticket, close, add, remove...", inline=True)
-    embed.add_field(name="🎵 Music", value="play, skip, queue, pause...", inline=True)
-    embed.add_field(name="🎮 Games", value="trivia, slots, rps...", inline=True)
-    embed.add_field(name="😂 Fun", value="meme, 8ball, roast...", inline=True)
-    embed.set_thumbnail(url=bot.user.display_avatar.url)
-    embed.set_footer(text="Lucky Bot • lucky.unaux.com")
     await interaction.response.send_message(embed=embed)
 
 # ══════════════════════════════════════════════
