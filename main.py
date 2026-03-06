@@ -72,11 +72,25 @@ async def on_ready():
     print(f"🏠 Guilds: {len(bot.guilds)}")
     print(f"🧩 Loaded Cogs: {', '.join(bot.cogs.keys()) or 'None'}")
 
+    # Guild sync makes slash commands show up quickly in joined servers.
+    guild_sync_ok = 0
+    for guild in bot.guilds:
+        try:
+            bot.tree.copy_global_to(guild=guild)
+            guild_synced = await bot.tree.sync(guild=guild)
+            guild_sync_ok += 1
+            print(f"✅ Synced {len(guild_synced)} guild command(s) to {guild.name} ({guild.id})")
+        except Exception as exc:
+            print(f"❌ Guild slash sync failed for {guild.name} ({guild.id}): {exc}")
+
     try:
         synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} slash command(s)")
+        print(f"✅ Synced {len(synced)} global slash command(s)")
     except Exception as exc:
-        print(f"❌ Slash sync failed: {exc}")
+        print(f"❌ Global slash sync failed: {exc}")
+
+    if bot.guilds and guild_sync_ok == 0:
+        print("⚠️ No guild command sync succeeded; slash commands may not appear immediately.")
 
 
 @bot.event
