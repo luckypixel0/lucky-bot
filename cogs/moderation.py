@@ -137,22 +137,6 @@ class Moderation(commands.Cog):
             return int(match.group(1)) * units[match.group(2)]
         return None
 
-    def _validate_duration(self, text: str, *, max_days: int = 28, field_name: str = "Time"):
-        seconds = self.parse_time(text)
-        if not seconds:
-            return None, discord.Embed(
-                title=f"❌ Invalid {field_name}",
-                description="Use: `30s`, `10m`, `2h`, `1d`",
-                color=0xe74c3c,
-            )
-        if seconds > 86400 * max_days:
-            return None, discord.Embed(
-                title="❌ Too Long",
-                description=f"Max {field_name.lower()} is {max_days} days.",
-                color=0xe74c3c,
-            )
-        return seconds, None
-
     def _parse_mute_args(self, raw_args: str):
         reason = "No reason provided"
         duration_seconds = 600
@@ -269,7 +253,7 @@ class Moderation(commands.Cog):
                 description="You cannot warn yourself.",
                 color=0xe74c3c,
             ), None
-        blocked_embed = self._warning_target_block_embed(guild, author, member)
+        blocked_embed = self._warning_target_block_embed(member)
         if blocked_embed:
             return blocked_embed, None
         if self.has_god_bypass(member) and not self.is_god_tier(author):
@@ -1274,34 +1258,17 @@ class Moderation(commands.Cog):
     def _set_warns(self, guild_id, member_id, warns):
         self.warn_db.setdefault(guild_id, {})[member_id] = warns
 
-    def _extract_reason(self, args: str):
-        if not args:
-            return "No reason provided"
-        return args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
-
-    def _mod_target_block_embed(self, guild, author, member, action_word="moderate"):
+    def _warning_target_block_embed(self, member):
         if member.bot:
             return discord.Embed(
                 title="❌ Invalid Target",
-                description=f"You cannot {action_word} a bot account.",
+                description="You cannot warn a bot account.",
                 color=0xe74c3c,
             )
-        if member.id == author.id:
-            return discord.Embed(
-                title="❌ Invalid Target",
-                description=f"You cannot {action_word} yourself.",
-                color=0xe74c3c,
-            )
-        if member.id == guild.owner_id or member.id in self.extraowners.get(guild.id, set()):
+        if member.id == member.guild.owner_id:
             return self.protected_error_embed(member)
-        if self.has_god_bypass(member) and not self.is_god_tier(author):
-            return self.bypass_error_embed(member)
-        return None
-
-    def _warning_target_block_embed(self, guild, author, member):
-        blocked = self._mod_target_block_embed(guild, author, member, action_word="warn")
-        if blocked:
-            return blocked
+        if member.id in self.extraowners.get(member.guild.id, set()):
+            return self.protected_error_embed(member)
         return None
 
     def _warnings_embed(self, member, warns):
@@ -1460,9 +1427,15 @@ class Moderation(commands.Cog):
                          member: discord.Member,
                          duration: str = "10m",
                          reason: str = "No reason provided"):
-        parsed, err = self._validate_duration(duration, max_days=28, field_name="Mute")
-        if err:
-            return await interaction.response.send_message(embed=err, ephemeral=True)
+        parsed = self.parse_time(duration)
+        if not parsed:
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="❌ Invalid Time", description="Use: `30s`, `10m`, `2h`, `1d`",
+                color=0xe74c3c), ephemeral=True)
+        if parsed > 86400 * 28:
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="❌ Too Long", description="Max mute is 28 days.",
+                color=0xe74c3c), ephemeral=True)
 
         embed, _ = await self._mute(interaction.guild, interaction.user,
                                      member, duration, parsed, reason)
@@ -1598,9 +1571,14 @@ class Moderation(commands.Cog):
         if blocked:
             return await ctx.reply(embed=blocked)
         reason = self._extract_reason(args)
-        seconds, err = self._validate_duration(time, max_days=28, field_name="Tempban")
-        if err:
-            return await ctx.reply(embed=err)
+        seconds = self.parse_time(time)
+        if not seconds:
+            return await ctx.reply(embed=discord.Embed(
+                title="❌ Invalid Time", description="Use: `30s`, `10m`, `2h`, `1d`",
+                color=0xe74c3c))
+        if seconds > 86400 * 28:
+            return await ctx.reply(embed=discord.Embed(
+                title="❌ Too Long", description="Max tempban is 28 days.", color=0xe74c3c))
         await member.ban(reason=f"[Tempban: {time}] {reason}")
         unban_ts = int((datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)).timestamp())
         embed = discord.Embed(title="⏳ Member Tempbanned", color=0xc0392b)
@@ -1627,9 +1605,14 @@ class Moderation(commands.Cog):
         blocked = self._mod_target_block_embed(interaction.guild, interaction.user, member, action_word="tempban")
         if blocked:
             return await interaction.response.send_message(embed=blocked, ephemeral=True)
-        seconds, err = self._validate_duration(duration, max_days=28, field_name="Tempban")
-        if err:
-            return await interaction.response.send_message(embed=err, ephemeral=True)
+        seconds = self.parse_time(duration)
+        if not seconds:
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="❌ Invalid Time", color=0xe74c3c,
+                description="Use: `30s`, `10m`, `2h`, `1d`"), ephemeral=True)
+        if seconds > 86400 * 28:
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="❌ Too Long", description="Max tempban is 28 days.", color=0xe74c3c), ephemeral=True)
         await member.ban(reason=f"[Tempban: {duration}] {reason}")
         unban_ts = int((datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)).timestamp())
         embed = discord.Embed(title="⏳ Member Tempbanned", color=0xc0392b)
