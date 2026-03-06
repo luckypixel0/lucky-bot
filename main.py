@@ -1,5 +1,6 @@
 import asyncio
 import os
+from pathlib import Path
 from typing import List
 
 import discord
@@ -15,6 +16,43 @@ PHASE_ONE_COGS: List[str] = [
     "cogs.moderation",
     "cogs.security",
 ]
+
+
+def build_prefix_callable(default_prefix: str = DEFAULT_PREFIX):
+    async def _get_prefix(bot: commands.Bot, message: discord.Message):
+        base = commands.when_mentioned(bot, message)
+        guild_id = message.guild.id if message.guild else None
+        custom = bot.custom_prefixes.get(guild_id, default_prefix)
+
+        # Allow approved users to run commands without typing a prefix.
+        if message.author.id in bot.no_prefix_users:
+            return base + ["", custom]
+
+        return base + [custom]
+
+    return _get_prefix
+
+
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+intents.guilds = True
+
+
+
+def discover_cogs() -> List[str]:
+    cog_dir = Path(__file__).parent / "cogs"
+    discovered = []
+    for path in sorted(cog_dir.glob("*.py")):
+        if path.stem.startswith("_"):
+            continue
+        if path.stem == "__init__":
+            continue
+        discovered.append(f"cogs.{path.stem}")
+    return discovered
+
+
+COGS_TO_LOAD: List[str] = discover_cogs()
 
 
 def build_prefix_callable(default_prefix: str = DEFAULT_PREFIX):
@@ -69,6 +107,26 @@ async def on_ready():
     except Exception as exc:
         print(f"❌ Slash sync failed: {exc}")
 
+    # Guild sync makes slash commands show up quickly in joined servers.
+    guild_sync_ok = 0
+    for guild in bot.guilds:
+        try:
+            bot.tree.copy_global_to(guild=guild)
+            guild_synced = await bot.tree.sync(guild=guild)
+            guild_sync_ok += 1
+            print(f"✅ Synced {len(guild_synced)} guild command(s) to {guild.name} ({guild.id})")
+        except Exception as exc:
+            print(f"❌ Guild slash sync failed for {guild.name} ({guild.id}): {exc}")
+
+    try:
+        synced = await bot.tree.sync()
+        print(f"✅ Synced {len(synced)} global slash command(s)")
+    except Exception as exc:
+        print(f"❌ Global slash sync failed: {exc}")
+
+    if bot.guilds and guild_sync_ok == 0:
+        print("⚠️ No guild command sync succeeded; slash commands may not appear immediately.")
+
 
 @bot.event
 async def on_command_error(ctx: commands.Context, error: commands.CommandError):
@@ -112,6 +170,7 @@ async def main():
 
     async with bot:
         for ext in PHASE_ONE_COGS:
+        for ext in COGS_TO_LOAD:
             try:
                 await bot.load_extension(ext)
                 print(f"✅ Loaded extension: {ext}")

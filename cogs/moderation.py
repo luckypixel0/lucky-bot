@@ -137,22 +137,6 @@ class Moderation(commands.Cog):
             return int(match.group(1)) * units[match.group(2)]
         return None
 
-    def _validate_duration(self, text: str, *, max_days: int = 28, field_name: str = "Time"):
-        seconds = self.parse_time(text)
-        if not seconds:
-            return None, discord.Embed(
-                title=f"❌ Invalid {field_name}",
-                description="Use: `30s`, `10m`, `2h`, `1d`",
-                color=0xe74c3c,
-            )
-        if seconds > 86400 * max_days:
-            return None, discord.Embed(
-                title="❌ Too Long",
-                description=f"Max {field_name.lower()} is {max_days} days.",
-                color=0xe74c3c,
-            )
-        return seconds, None
-
     def _parse_mute_args(self, raw_args: str):
         reason = "No reason provided"
         duration_seconds = 600
@@ -218,6 +202,14 @@ class Moderation(commands.Cog):
             )
 
         await member.timeout(None, reason=f"Unmuted by {author}")
+        try:
+            await member.timeout(None, reason=f"Unmuted by {author}")
+        except discord.Forbidden:
+            return discord.Embed(
+                title="❌ Missing Bot Permission",
+                description="I need **Moderate Members** permission and a higher role to unmute this user.",
+                color=0xe74c3c,
+            )
         embed = discord.Embed(title="🔊 Member Unmuted", color=0x2ecc71)
         embed.add_field(name="User", value=member.mention)
         embed.add_field(name="Moderator", value=author.mention)
@@ -269,7 +261,7 @@ class Moderation(commands.Cog):
                 description="You cannot warn yourself.",
                 color=0xe74c3c,
             ), None
-        blocked_embed = self._warning_target_block_embed(guild, author, member)
+        blocked_embed = self._warning_target_block_embed(member)
         if blocked_embed:
             return blocked_embed, None
         if self.has_god_bypass(member) and not self.is_god_tier(author):
@@ -317,7 +309,14 @@ class Moderation(commands.Cog):
         if member.id in self.extraowners.get(guild.id, set()):
             return self.protected_error_embed(member), None
         until = discord.utils.utcnow() + datetime.timedelta(seconds=duration_seconds)
-        await member.timeout(until, reason=reason)
+        try:
+            await member.timeout(until, reason=reason)
+        except discord.Forbidden:
+            return discord.Embed(
+                title="❌ Missing Bot Permission",
+                description="I need **Moderate Members** permission and a higher role to mute this user.",
+                color=0xe74c3c,
+            ), None
         embed = discord.Embed(title="🔇 Member Muted", color=0x95a5a6)
         embed.add_field(name="User", value=member.mention)
         embed.add_field(name="Duration", value=duration_text)
@@ -353,6 +352,14 @@ class Moderation(commands.Cog):
         if blocked:
             return blocked, None
         await member.kick(reason=reason)
+        try:
+            await member.kick(reason=reason)
+        except discord.Forbidden:
+            return discord.Embed(
+                title="❌ Missing Bot Permission",
+                description="I need **Kick Members** permission and a higher role to kick this user.",
+                color=0xe74c3c,
+            ), None
         embed = discord.Embed(title="👢 Member Kicked", color=0xe74c3c)
         embed.add_field(name="User", value=member.mention)
         embed.add_field(name="Reason", value=reason)
@@ -386,6 +393,14 @@ class Moderation(commands.Cog):
         if blocked:
             return blocked, None
         await member.ban(reason=reason)
+        try:
+            await member.ban(reason=reason)
+        except discord.Forbidden:
+            return discord.Embed(
+                title="❌ Missing Bot Permission",
+                description="I need **Ban Members** permission and a higher role to ban this user.",
+                color=0xe74c3c,
+            ), None
         embed = discord.Embed(title="🔨 Member Banned", color=0xc0392b)
         embed.add_field(name="User", value=member.mention)
         embed.add_field(name="Reason", value=reason)
@@ -1278,6 +1293,18 @@ class Moderation(commands.Cog):
         if not args:
             return "No reason provided"
         return args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
+    def _warning_target_block_embed(self, member):
+        if member.bot:
+            return discord.Embed(
+                title="❌ Invalid Target",
+                description="You cannot warn a bot account.",
+                color=0xe74c3c,
+            )
+        if member.id == member.guild.owner_id:
+            return self.protected_error_embed(member)
+        if member.id in self.extraowners.get(member.guild.id, set()):
+            return self.protected_error_embed(member)
+        return None
 
     def _mod_target_block_embed(self, guild, author, member, action_word="moderate"):
         if member.bot:
@@ -1303,6 +1330,49 @@ class Moderation(commands.Cog):
         if blocked:
             return blocked
         return None
+
+        if self.has_god_bypass(member) and not self.is_god_tier(author):
+            return self.bypass_error_embed(member)
+        if member.id == guild.owner_id:
+            return self.protected_error_embed(member)
+        if member.id in self.extraowners.get(guild.id, set()):
+            return self.protected_error_embed(member)
+
+        if not self.is_god_tier(author) and member.top_role >= author.top_role:
+            return discord.Embed(
+                title="❌ Cannot Moderate Target",
+                description=f"You cannot {action_word} someone with an equal or higher role.",
+                color=0xe74c3c,
+            )
+
+        bot_member = guild.me or guild.get_member(self.bot.user.id)
+        if bot_member:
+            if member.id == bot_member.id:
+                return discord.Embed(
+                    title="❌ Invalid Target",
+                    description="I cannot moderate myself.",
+                    color=0xe74c3c,
+                )
+            if member.top_role >= bot_member.top_role:
+                return discord.Embed(
+                    title="❌ Bot Hierarchy Error",
+                    description=(
+                        f"I cannot {action_word} {member.mention} because their role is equal to or higher than mine. "
+                        "Move my role above theirs and try again."
+                    ),
+                    color=0xe74c3c,
+                )
+
+        return None
+
+    def _extract_reason(self, args):
+        text = (args or "").strip()
+        if not text:
+            return "No reason provided"
+        if "?r" in text:
+            reason = text.split("?r", 1)[1].strip()
+            return reason or "No reason provided"
+        return text
 
     def _warnings_embed(self, member, warns):
         embed = discord.Embed(title=f"⚠️ Warnings — {member.display_name}", color=0xf39c12)
@@ -1463,6 +1533,15 @@ class Moderation(commands.Cog):
         parsed, err = self._validate_duration(duration, max_days=28, field_name="Mute")
         if err:
             return await interaction.response.send_message(embed=err, ephemeral=True)
+        parsed = self.parse_time(duration)
+        if not parsed:
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="❌ Invalid Time", description="Use: `30s`, `10m`, `2h`, `1d`",
+                color=0xe74c3c), ephemeral=True)
+        if parsed > 86400 * 28:
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="❌ Too Long", description="Max mute is 28 days.",
+                color=0xe74c3c), ephemeral=True)
 
         embed, _ = await self._mute(interaction.guild, interaction.user,
                                      member, duration, parsed, reason)
@@ -1602,6 +1681,22 @@ class Moderation(commands.Cog):
         if err:
             return await ctx.reply(embed=err)
         await member.ban(reason=f"[Tempban: {time}] {reason}")
+        seconds = self.parse_time(time)
+        if not seconds:
+            return await ctx.reply(embed=discord.Embed(
+                title="❌ Invalid Time", description="Use: `30s`, `10m`, `2h`, `1d`",
+                color=0xe74c3c))
+        if seconds > 86400 * 28:
+            return await ctx.reply(embed=discord.Embed(
+                title="❌ Too Long", description="Max tempban is 28 days.", color=0xe74c3c))
+        try:
+            await member.ban(reason=f"[Tempban: {time}] {reason}")
+        except discord.Forbidden:
+            return await ctx.reply(embed=discord.Embed(
+                title="❌ Missing Bot Permission",
+                description="I need **Ban Members** permission and a higher role to tempban this user.",
+                color=0xe74c3c,
+            ))
         unban_ts = int((datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)).timestamp())
         embed = discord.Embed(title="⏳ Member Tempbanned", color=0xc0392b)
         embed.add_field(name="User", value=member.mention)
@@ -1631,6 +1726,22 @@ class Moderation(commands.Cog):
         if err:
             return await interaction.response.send_message(embed=err, ephemeral=True)
         await member.ban(reason=f"[Tempban: {duration}] {reason}")
+        seconds = self.parse_time(duration)
+        if not seconds:
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="❌ Invalid Time", color=0xe74c3c,
+                description="Use: `30s`, `10m`, `2h`, `1d`"), ephemeral=True)
+        if seconds > 86400 * 28:
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="❌ Too Long", description="Max tempban is 28 days.", color=0xe74c3c), ephemeral=True)
+        try:
+            await member.ban(reason=f"[Tempban: {duration}] {reason}")
+        except discord.Forbidden:
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="❌ Missing Bot Permission",
+                description="I need **Ban Members** permission and a higher role to tempban this user.",
+                color=0xe74c3c,
+            ), ephemeral=True)
         unban_ts = int((datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)).timestamp())
         embed = discord.Embed(title="⏳ Member Tempbanned", color=0xc0392b)
         embed.add_field(name="User", value=member.mention)
