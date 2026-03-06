@@ -12,8 +12,6 @@ PHASE_ONE_COGS: List[str] = [
     "cogs.prefix",
     "cogs.help",
     "cogs.bot_status",
-    "cogs.moderation",
-    "cogs.security",
 ]
 
 
