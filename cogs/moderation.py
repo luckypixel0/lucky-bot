@@ -1271,6 +1271,36 @@ class Moderation(commands.Cog):
             return self.protected_error_embed(member)
         return None
 
+    def _mod_target_block_embed(self, guild, author, member, action_word="moderate"):
+        if member.bot:
+            return discord.Embed(
+                title="❌ Invalid Target",
+                description=f"You cannot {action_word} a bot account.",
+                color=0xe74c3c,
+            )
+        if member.id == author.id:
+            return discord.Embed(
+                title="❌ Invalid Target",
+                description=f"You cannot {action_word} yourself.",
+                color=0xe74c3c,
+            )
+        if self.has_god_bypass(member) and not self.is_god_tier(author):
+            return self.bypass_error_embed(member)
+        if member.id == guild.owner_id:
+            return self.protected_error_embed(member)
+        if member.id in self.extraowners.get(guild.id, set()):
+            return self.protected_error_embed(member)
+        return None
+
+    def _extract_reason(self, args):
+        text = (args or "").strip()
+        if not text:
+            return "No reason provided"
+        if "?r" in text:
+            reason = text.split("?r", 1)[1].strip()
+            return reason or "No reason provided"
+        return text
+
     def _warnings_embed(self, member, warns):
         embed = discord.Embed(title=f"⚠️ Warnings — {member.display_name}", color=0xf39c12)
         for i, w in enumerate(warns, 1):
