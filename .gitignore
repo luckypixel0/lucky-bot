@@ -1,0 +1,6 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Local delivery artifacts (do not commit binaries to PRs)
+lucky-bot-phase1-ready.zip

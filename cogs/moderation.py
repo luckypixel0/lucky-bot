@@ -137,6 +137,95 @@ class Moderation(commands.Cog):
             return int(match.group(1)) * units[match.group(2)]
         return None
 
+    def _validate_duration(self, text: str, *, max_days: int = 28, field_name: str = "Time"):
+        seconds = self.parse_time(text)
+        if not seconds:
+            return None, discord.Embed(
+                title=f"❌ Invalid {field_name}",
+                description="Use: `30s`, `10m`, `2h`, `1d`",
+                color=0xe74c3c,
+            )
+        if seconds > 86400 * max_days:
+            return None, discord.Embed(
+                title="❌ Too Long",
+                description=f"Max {field_name.lower()} is {max_days} days.",
+                color=0xe74c3c,
+            )
+        return seconds, None
+
+    def _parse_mute_args(self, raw_args: str):
+        reason = "No reason provided"
+        duration_seconds = 600
+        duration_text = "10m"
+        args = (raw_args or "").strip()
+
+        # Support: ?t 10m ?r reason   (order can vary)
+        if "?r" in args:
+            parts = args.split("?r", 1)
+            args = parts[0].strip()
+            r_part = parts[1]
+            if "?t" in r_part:
+                r_split = r_part.split("?t", 1)
+                reason = r_split[0].strip() or reason
+                args = f"{args} {r_split[1].strip()}".strip()
+            else:
+                reason = r_part.strip() or reason
+
+        if "?t" in args:
+            t_values = args.split("?t", 1)[1].strip().split()
+            if not t_values:
+                return None, None, discord.Embed(
+                    title="❌ Missing Time",
+                    description="Use: `?t 30s`, `?t 10m`, `?t 2h`, or `?t 1d`",
+                    color=0xe74c3c,
+                )
+            duration_text = t_values[0]
+            parsed = self.parse_time(duration_text)
+            if not parsed:
+                return None, None, discord.Embed(
+                    title="❌ Invalid Time",
+                    description="Use: `30s`, `10m`, `2h`, `1d`",
+                    color=0xe74c3c,
+                )
+            if parsed > 86400 * 28:
+                return None, None, discord.Embed(
+                    title="❌ Too Long",
+                    description="Max mute is 28 days.",
+                    color=0xe74c3c,
+                )
+            duration_seconds = parsed
+
+        return duration_text, duration_seconds, reason
+
+    async def _unmute(self, guild, author, member):
+        if not self.can_do(author, 'mute'):
+            return self.perm_error_embed('mute', self.get_hierarchy_level(author))
+        if member.id == author.id:
+            return discord.Embed(
+                title="❌ Invalid Target",
+                description="You cannot unmute yourself.",
+                color=0xe74c3c,
+            )
+        if self.has_god_bypass(member) and not self.is_god_tier(author):
+            return self.bypass_error_embed(member)
+        if member.id == guild.owner_id or member.id in self.extraowners.get(guild.id, set()):
+            return self.protected_error_embed(member)
+        if member.timed_out_until is None or member.timed_out_until <= discord.utils.utcnow():
+            return discord.Embed(
+                title="ℹ️ Not Muted",
+                description=f"{member.mention} is not currently muted.",
+                color=0x3498db,
+            )
+
+        await member.timeout(None, reason=f"Unmuted by {author}")
+        embed = discord.Embed(title="🔊 Member Unmuted", color=0x2ecc71)
+        embed.add_field(name="User", value=member.mention)
+        embed.add_field(name="Moderator", value=author.mention)
+        embed.set_footer(text="Lucky Bot Moderation")
+        await self.send_log(guild, self.log_embed("🔊 Member Unmuted", 0x2ecc71,
+            user=f"{member} ({member.id})", moderator=str(author)))
+        return embed
+
     async def send_log(self, guild, embed):
         log_channel = discord.utils.get(guild.text_channels, name='mod-logs')
         if log_channel:
@@ -158,6 +247,15 @@ class Moderation(commands.Cog):
         embed.set_footer(text="Lucky Bot Mod Logs")
         return embed
 
+    async def _schedule_tempban_unban(self, guild, user, seconds):
+        await asyncio.sleep(seconds)
+        try:
+            await guild.unban(user, reason="Tempban expired")
+            await self.send_log(guild, self.log_embed(
+                "✅ Tempban Expired", 0x2ecc71, user=str(user)))
+        except Exception:
+            pass
+
     # ══════════════════════════════════════════
     #   SHARED LOGIC
     # ══════════════════════════════════════════
@@ -165,6 +263,15 @@ class Moderation(commands.Cog):
     async def _warn(self, guild, author, member, reason):
         if not self.can_do(author, 'warn'):
             return self.perm_error_embed('warn', self.get_hierarchy_level(author)), None
+        if member.id == author.id:
+            return discord.Embed(
+                title="❌ Invalid Target",
+                description="You cannot warn yourself.",
+                color=0xe74c3c,
+            ), None
+        blocked_embed = self._warning_target_block_embed(guild, author, member)
+        if blocked_embed:
+            return blocked_embed, None
         if self.has_god_bypass(member) and not self.is_god_tier(author):
             return self.bypass_error_embed(member), None
         guild_id = guild.id
@@ -242,12 +349,9 @@ class Moderation(commands.Cog):
                     inline=False
                 )
             return embed, None
-        if self.has_god_bypass(member) and not self.is_god_tier(author):
-            return self.bypass_error_embed(member), None
-        if member.id == guild.owner_id:
-            return self.protected_error_embed(member), None
-        if member.id in self.extraowners.get(guild.id, set()):
-            return self.protected_error_embed(member), None
+        blocked = self._mod_target_block_embed(guild, author, member, action_word="kick")
+        if blocked:
+            return blocked, None
         await member.kick(reason=reason)
         embed = discord.Embed(title="👢 Member Kicked", color=0xe74c3c)
         embed.add_field(name="User", value=member.mention)
@@ -278,12 +382,9 @@ class Moderation(commands.Cog):
                     inline=False
                 )
             return embed, None
-        if self.has_god_bypass(member) and not self.is_god_tier(author):
-            return self.bypass_error_embed(member), None
-        if member.id == guild.owner_id:
-            return self.protected_error_embed(member), None
-        if member.id in self.extraowners.get(guild.id, set()):
-            return self.protected_error_embed(member), None
+        blocked = self._mod_target_block_embed(guild, author, member, action_word="ban")
+        if blocked:
+            return blocked, None
         await member.ban(reason=reason)
         embed = discord.Embed(title="🔨 Member Banned", color=0xc0392b)
         embed.add_field(name="User", value=member.mention)
@@ -1167,13 +1268,56 @@ class Moderation(commands.Cog):
             color=0x2ecc71
         ))
 
+    def _get_warns(self, guild_id, member_id):
+        return self.warn_db.get(guild_id, {}).get(member_id, [])
+
+    def _set_warns(self, guild_id, member_id, warns):
+        self.warn_db.setdefault(guild_id, {})[member_id] = warns
+
+    def _extract_reason(self, args: str):
+        if not args:
+            return "No reason provided"
+        return args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
+
+    def _mod_target_block_embed(self, guild, author, member, action_word="moderate"):
+        if member.bot:
+            return discord.Embed(
+                title="❌ Invalid Target",
+                description=f"You cannot {action_word} a bot account.",
+                color=0xe74c3c,
+            )
+        if member.id == author.id:
+            return discord.Embed(
+                title="❌ Invalid Target",
+                description=f"You cannot {action_word} yourself.",
+                color=0xe74c3c,
+            )
+        if member.id == guild.owner_id or member.id in self.extraowners.get(guild.id, set()):
+            return self.protected_error_embed(member)
+        if self.has_god_bypass(member) and not self.is_god_tier(author):
+            return self.bypass_error_embed(member)
+        return None
+
+    def _warning_target_block_embed(self, guild, author, member):
+        blocked = self._mod_target_block_embed(guild, author, member, action_word="warn")
+        if blocked:
+            return blocked
+        return None
+
+    def _warnings_embed(self, member, warns):
+        embed = discord.Embed(title=f"⚠️ Warnings — {member.display_name}", color=0xf39c12)
+        for i, w in enumerate(warns, 1):
+            embed.add_field(name=f"Warning #{i}", value=w, inline=False)
+        embed.set_footer(text=f"Total: {len(warns)} warning(s)")
+        return embed
+
     # ══════════════════════════════════════════
     #   WARN COMMANDS
     # ══════════════════════════════════════════
 
     @commands.command()
     async def warn(self, ctx, member: discord.Member, *, args=""):
-        reason = args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
+        reason = self._extract_reason(args)
         embed, extra = await self._warn(ctx.guild, ctx.author, member, reason)
         await ctx.reply(embed=embed)
         if extra:
@@ -1192,15 +1336,11 @@ class Moderation(commands.Cog):
     async def warnings(self, ctx, member: discord.Member):
         if not self.can_do(ctx.author, 'warn'):
             return await ctx.reply(embed=self.perm_error_embed('warn'))
-        warns = self.warn_db.get(ctx.guild.id, {}).get(member.id, [])
+        warns = self._get_warns(ctx.guild.id, member.id)
         if not warns:
             return await ctx.reply(embed=discord.Embed(
                 description=f"✅ {member.mention} has no warnings!", color=0x2ecc71))
-        embed = discord.Embed(title=f"⚠️ Warnings — {member.display_name}", color=0xf39c12)
-        for i, w in enumerate(warns, 1):
-            embed.add_field(name=f"Warning #{i}", value=w, inline=False)
-        embed.set_footer(text=f"Total: {len(warns)} warnings")
-        await ctx.send(embed=embed)
+        await ctx.send(embed=self._warnings_embed(member, warns))
 
     @app_commands.command(name='warnings', description='Check warnings for a member')
     @app_commands.describe(member='Member to check')
@@ -1208,20 +1348,17 @@ class Moderation(commands.Cog):
         if not self.can_do(interaction.user, 'warn'):
             return await interaction.response.send_message(
                 embed=self.perm_error_embed('warn'), ephemeral=True)
-        warns = self.warn_db.get(interaction.guild.id, {}).get(member.id, [])
+        warns = self._get_warns(interaction.guild.id, member.id)
         if not warns:
             return await interaction.response.send_message(embed=discord.Embed(
                 description=f"✅ {member.mention} has no warnings!", color=0x2ecc71))
-        embed = discord.Embed(title=f"⚠️ Warnings — {member.display_name}", color=0xf39c12)
-        for i, w in enumerate(warns, 1):
-            embed.add_field(name=f"Warning #{i}", value=w, inline=False)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=self._warnings_embed(member, warns))
 
     @commands.command()
     async def unwarn(self, ctx, member: discord.Member, number: int = None):
         if not self.can_do(ctx.author, 'warn'):
             return await ctx.reply(embed=self.perm_error_embed('warn'))
-        warns = self.warn_db.get(ctx.guild.id, {}).get(member.id, [])
+        warns = self._get_warns(ctx.guild.id, member.id)
         if not warns:
             return await ctx.reply(embed=discord.Embed(
                 description=f"✅ {member.mention} has no warnings!", color=0x2ecc71))
@@ -1231,10 +1368,10 @@ class Moderation(commands.Cog):
             if number < 1 or number > len(warns):
                 return await ctx.reply(embed=discord.Embed(
                     title="❌ Invalid Number",
-                    description=f"{member.mention} has {len(warns)} warnings.",
+                    description=f"{member.mention} has {len(warns)} warnings. Use 1 to {len(warns)}.",
                     color=0xe74c3c))
             removed = warns.pop(number - 1)
-        self.warn_db[ctx.guild.id][member.id] = warns
+        self._set_warns(ctx.guild.id, member.id, warns)
         embed = discord.Embed(title="✅ Warning Removed", color=0x2ecc71)
         embed.add_field(name="User", value=member.mention)
         embed.add_field(name="Removed", value=removed)
@@ -1248,13 +1385,24 @@ class Moderation(commands.Cog):
         if not self.can_do(interaction.user, 'warn'):
             return await interaction.response.send_message(
                 embed=self.perm_error_embed('warn'), ephemeral=True)
-        warns = self.warn_db.get(interaction.guild.id, {}).get(member.id, [])
+        warns = self._get_warns(interaction.guild.id, member.id)
         if not warns:
             return await interaction.response.send_message(embed=discord.Embed(
                 description=f"✅ {member.mention} has no warnings!", color=0x2ecc71))
-        removed = warns.pop() if number is None else warns.pop(number - 1)
-        self.warn_db[interaction.guild.id][member.id] = warns
+
+        if number is None:
+            removed = warns.pop()
+        else:
+            if number < 1 or number > len(warns):
+                return await interaction.response.send_message(embed=discord.Embed(
+                    title="❌ Invalid Number",
+                    description=f"{member.mention} has {len(warns)} warnings. Use 1 to {len(warns)}.",
+                    color=0xe74c3c), ephemeral=True)
+            removed = warns.pop(number - 1)
+
+        self._set_warns(interaction.guild.id, member.id, warns)
         embed = discord.Embed(title="✅ Warning Removed", color=0x2ecc71)
+        embed.add_field(name="User", value=member.mention)
         embed.add_field(name="Removed", value=removed)
         embed.add_field(name="Remaining", value=str(len(warns)))
         await interaction.response.send_message(embed=embed)
@@ -1263,8 +1411,11 @@ class Moderation(commands.Cog):
     async def clearwarn(self, ctx, member: discord.Member):
         if not self.can_do(ctx.author, 'warn'):
             return await ctx.reply(embed=self.perm_error_embed('warn'))
-        if ctx.guild.id in self.warn_db and member.id in self.warn_db[ctx.guild.id]:
-            self.warn_db[ctx.guild.id][member.id] = []
+        warns = self._get_warns(ctx.guild.id, member.id)
+        if not warns:
+            return await ctx.reply(embed=discord.Embed(
+                description=f"✅ {member.mention} has no warnings to clear!", color=0x2ecc71))
+        self._set_warns(ctx.guild.id, member.id, [])
         await ctx.reply(embed=discord.Embed(
             title="🧹 Warnings Cleared",
             description=f"Cleared all warnings for {member.mention}!",
@@ -1277,8 +1428,12 @@ class Moderation(commands.Cog):
         if not self.can_do(interaction.user, 'warn'):
             return await interaction.response.send_message(
                 embed=self.perm_error_embed('warn'), ephemeral=True)
-        if interaction.guild.id in self.warn_db and member.id in self.warn_db[interaction.guild.id]:
-            self.warn_db[interaction.guild.id][member.id] = []
+        warns = self._get_warns(interaction.guild.id, member.id)
+        if not warns:
+            return await interaction.response.send_message(embed=discord.Embed(
+                description=f"✅ {member.mention} has no warnings to clear!", color=0x2ecc71),
+                ephemeral=True)
+        self._set_warns(interaction.guild.id, member.id, [])
         await interaction.response.send_message(embed=discord.Embed(
             title="🧹 Warnings Cleared",
             description=f"Cleared all warnings for {member.mention}!",
@@ -1291,34 +1446,10 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def mute(self, ctx, member: discord.Member, *, args=""):
-        reason = "No reason provided"
-        duration_seconds = 600
-        duration_text = "10m (default)"
-        if "?r" in args:
-            parts = args.split("?r", 1)
-            args = parts[0].strip()
-            r_part = parts[1]
-            if "?t" in r_part:
-                r_split = r_part.split("?t", 1)
-                reason = r_split[0].strip()
-                args += " " + r_split[1].strip()
-            else:
-                reason = r_part.strip()
-        if "?t" in args:
-            t_part = args.split("?t", 1)[1].strip().split()[0]
-            parsed = self.parse_time(t_part)
-            if parsed:
-                if parsed > 86400 * 28:
-                    return await ctx.reply(embed=discord.Embed(
-                        title="❌ Too Long", description="Max mute is 28 days!", color=0xe74c3c))
-                duration_seconds = parsed
-                duration_text = t_part
-            else:
-                return await ctx.reply(embed=discord.Embed(
-                    title="❌ Invalid Time",
-                    description="Use: `30s`, `10m`, `2h`, `1d`",
-                    color=0xe74c3c
-                ))
+        parsed = self._parse_mute_args(args)
+        if isinstance(parsed[2], discord.Embed):
+            return await ctx.reply(embed=parsed[2])
+        duration_text, duration_seconds, reason = parsed
         embed, _ = await self._mute(ctx.guild, ctx.author, member,
                                      duration_text, duration_seconds, reason)
         await ctx.reply(embed=embed)
@@ -1329,39 +1460,24 @@ class Moderation(commands.Cog):
                          member: discord.Member,
                          duration: str = "10m",
                          reason: str = "No reason provided"):
-        parsed = self.parse_time(duration)
-        if not parsed:
-            return await interaction.response.send_message(embed=discord.Embed(
-                title="❌ Invalid Time", description="Use: `30s`, `10m`, `2h`, `1d`",
-                color=0xe74c3c), ephemeral=True)
+        parsed, err = self._validate_duration(duration, max_days=28, field_name="Mute")
+        if err:
+            return await interaction.response.send_message(embed=err, ephemeral=True)
+
         embed, _ = await self._mute(interaction.guild, interaction.user,
                                      member, duration, parsed, reason)
         await interaction.response.send_message(embed=embed)
 
     @commands.command()
     async def unmute(self, ctx, member: discord.Member):
-        if not self.can_do(ctx.author, 'mute'):
-            return await ctx.reply(embed=self.perm_error_embed('mute'))
-        await member.timeout(None)
-        embed = discord.Embed(title="🔊 Member Unmuted", color=0x2ecc71)
-        embed.add_field(name="User", value=member.mention)
-        embed.add_field(name="Moderator", value=ctx.author.mention)
+        embed = await self._unmute(ctx.guild, ctx.author, member)
         await ctx.send(embed=embed)
-        await self.send_log(ctx.guild, self.log_embed("🔊 Unmuted", 0x2ecc71,
-            user=f"{member} ({member.id})", moderator=str(ctx.author)))
 
     @app_commands.command(name='unmute', description='Unmute a member')
     @app_commands.describe(member='Member to unmute')
     async def unmute_slash(self, interaction: discord.Interaction, member: discord.Member):
-        if not self.can_do(interaction.user, 'mute'):
-            return await interaction.response.send_message(
-                embed=self.perm_error_embed('mute'), ephemeral=True)
-        await member.timeout(None)
-        await interaction.response.send_message(embed=discord.Embed(
-            title="🔊 Member Unmuted",
-            description=f"{member.mention} has been unmuted!",
-            color=0x2ecc71
-        ))
+        embed = await self._unmute(interaction.guild, interaction.user, member)
+        await interaction.response.send_message(embed=embed)
 
     # ══════════════════════════════════════════
     #   KICK COMMANDS
@@ -1369,7 +1485,7 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def kick(self, ctx, member: discord.Member, *, args=""):
-        reason = args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
+        reason = self._extract_reason(args)
         embed, _ = await self._kick(ctx.guild, ctx.author, member, reason)
         await ctx.reply(embed=embed)
 
@@ -1386,7 +1502,7 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def ban(self, ctx, member: discord.Member, *, args=""):
-        reason = args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
+        reason = self._extract_reason(args)
         embed, _ = await self._ban(ctx.guild, ctx.author, member, reason)
         await ctx.reply(embed=embed)
 
@@ -1451,27 +1567,40 @@ class Moderation(commands.Cog):
         if not matches:
             return await interaction.response.send_message(embed=discord.Embed(
                 title="❌ Not Found", color=0xe74c3c,
-                description=f"No banned user matching `{username}`"))
+                description=f"No banned user matching `{username}`"), ephemeral=True)
+
+        if len(matches) > 1:
+            choices = "\n".join([f"• `{e.user}`" for e in matches[:10]])
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="⚠️ Multiple Matches",
+                description=(
+                    f"More than one banned user matched `{username}`.\n"
+                    f"Use a more specific name/tag and retry.\n\n{choices}"
+                ),
+                color=0xe67e22,
+            ), ephemeral=True)
+
         await interaction.guild.unban(matches[0].user)
         await interaction.response.send_message(embed=discord.Embed(
             title="✅ Unbanned",
             description=f"Unbanned **{matches[0].user}**!",
             color=0x2ecc71
         ))
+        await self.send_log(interaction.guild, self.log_embed(
+            "✅ Unbanned", 0x2ecc71, user=str(matches[0].user), moderator=str(interaction.user)))
 
     @commands.command()
     async def tempban(self, ctx, member: discord.Member, time: str, *, args=""):
         if not self.can_do(ctx.author, 'tempban'):
             return await ctx.reply(embed=self.perm_error_embed(
                 'tempban', self.get_hierarchy_level(ctx.author)))
-        if self.has_god_bypass(member) and not self.is_god_tier(ctx.author):
-            return await ctx.reply(embed=self.bypass_error_embed(member))
-        reason = args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
-        seconds = self.parse_time(time)
-        if not seconds:
-            return await ctx.reply(embed=discord.Embed(
-                title="❌ Invalid Time", description="Use: `30s`, `10m`, `2h`, `1d`",
-                color=0xe74c3c))
+        blocked = self._mod_target_block_embed(ctx.guild, ctx.author, member, action_word="tempban")
+        if blocked:
+            return await ctx.reply(embed=blocked)
+        reason = self._extract_reason(args)
+        seconds, err = self._validate_duration(time, max_days=28, field_name="Tempban")
+        if err:
+            return await ctx.reply(embed=err)
         await member.ban(reason=f"[Tempban: {time}] {reason}")
         unban_ts = int((datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)).timestamp())
         embed = discord.Embed(title="⏳ Member Tempbanned", color=0xc0392b)
@@ -1484,13 +1613,7 @@ class Moderation(commands.Cog):
         await self.send_log(ctx.guild, self.log_embed("⏳ Tempban", 0xc0392b,
             user=f"{member} ({member.id})", duration=time,
             reason=reason, moderator=str(ctx.author)))
-        await asyncio.sleep(seconds)
-        try:
-            await ctx.guild.unban(member, reason="Tempban expired")
-            await self.send_log(ctx.guild, self.log_embed(
-                "✅ Tempban Expired", 0x2ecc71, user=str(member)))
-        except:
-            pass
+        self.bot.loop.create_task(self._schedule_tempban_unban(ctx.guild, member, seconds))
 
     @app_commands.command(name='tempban', description='Temporarily ban a member')
     @app_commands.describe(member='Member', duration='e.g. 1h, 30m', reason='Reason')
@@ -1501,11 +1624,12 @@ class Moderation(commands.Cog):
         if not self.can_do(interaction.user, 'tempban'):
             return await interaction.response.send_message(
                 embed=self.perm_error_embed('tempban'), ephemeral=True)
-        seconds = self.parse_time(duration)
-        if not seconds:
-            return await interaction.response.send_message(embed=discord.Embed(
-                title="❌ Invalid Time", color=0xe74c3c,
-                description="Use: `30s`, `10m`, `2h`, `1d`"), ephemeral=True)
+        blocked = self._mod_target_block_embed(interaction.guild, interaction.user, member, action_word="tempban")
+        if blocked:
+            return await interaction.response.send_message(embed=blocked, ephemeral=True)
+        seconds, err = self._validate_duration(duration, max_days=28, field_name="Tempban")
+        if err:
+            return await interaction.response.send_message(embed=err, ephemeral=True)
         await member.ban(reason=f"[Tempban: {duration}] {reason}")
         unban_ts = int((datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)).timestamp())
         embed = discord.Embed(title="⏳ Member Tempbanned", color=0xc0392b)
@@ -1514,11 +1638,10 @@ class Moderation(commands.Cog):
         embed.add_field(name="Reason", value=reason)
         embed.add_field(name="Unban at", value=f"<t:{unban_ts}:R>")
         await interaction.response.send_message(embed=embed)
-        await asyncio.sleep(seconds)
-        try:
-            await interaction.guild.unban(member, reason="Tempban expired")
-        except:
-            pass
+        await self.send_log(interaction.guild, self.log_embed("⏳ Tempban", 0xc0392b,
+            user=f"{member} ({member.id})", duration=duration,
+            reason=reason, moderator=str(interaction.user)))
+        self.bot.loop.create_task(self._schedule_tempban_unban(interaction.guild, member, seconds))
 
     # ══════════════════════════════════════════
     #   MASSBAN
