@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import asyncio
 import datetime
 from collections import defaultdict
@@ -627,56 +628,75 @@ class Security(commands.Cog):
     #   SECURITY STATUS
     # ══════════════════════════════════════════
 
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def security(self, ctx):
-        """Full security overview. Usage: !security"""
-        guild_id = ctx.guild.id
-        def status(val): return "✅ ON" if val else "❌ OFF"
+    def _build_security_embed(self, guild):
+        guild_id = guild.id
+
+        def status(val):
+            return "✅ ON" if val else "❌ OFF"
+
         embed = discord.Embed(
             title="🔐 Security Overview",
-            description=f"Full security status for **{ctx.guild.name}**",
+            description=f"Full security status for **{guild.name}**",
             color=0x2ecc71,
-            timestamp=datetime.datetime.utcnow()
+            timestamp=datetime.datetime.utcnow(),
         )
         embed.add_field(
             name="🛡️ Anti-Nuke",
             value=(
-                f"Status: {status(self.antinuke_enabled.get(guild_id, False))}\n"
-                f"Action: {self.antinuke_action.get(guild_id, 'ban').upper()}\n"
+                f"Status: {status(self.antinuke_enabled.get(guild_id, False))}\\n"
+                f"Action: {self.antinuke_action.get(guild_id, 'ban').upper()}\\n"
                 f"Whitelist: {len(self.antinuke_whitelist.get(guild_id, set()))} users"
-            )
+            ),
         )
         embed.add_field(
             name="🚨 Anti-Raid",
             value=(
-                f"Status: {status(self.antiraid_enabled.get(guild_id, False))}\n"
+                f"Status: {status(self.antiraid_enabled.get(guild_id, False))}\\n"
                 f"Lockdown: {'🔴 ACTIVE' if self.raid_mode_active.get(guild_id, False) else '🟢 Inactive'}"
-            )
+            ),
         )
         embed.add_field(
             name="💬 Anti-Spam",
             value=(
-                f"Status: {status(self.antispam_enabled.get(guild_id, False))}\n"
+                f"Status: {status(self.antispam_enabled.get(guild_id, False))}\\n"
                 f"Threshold: {self.spam_threshold.get(guild_id, 5)} msgs/5s"
-            )
+            ),
         )
         embed.add_field(
             name="🤖 Anti-Bot",
-            value=f"Status: {status(self.antibot_enabled.get(guild_id, False))}"
+            value=f"Status: {status(self.antibot_enabled.get(guild_id, False))}",
         )
         embed.add_field(
             name="Quick Enable All",
             value=(
-                "`!antinuke on`\n"
-                "`!antiraid on`\n"
-                "`!antispam on`\n"
+                "`!antinuke on`\\n"
+                "`!antiraid on`\\n"
+                "`!antispam on`\\n"
                 "`!antibot on`"
             ),
-            inline=False
+            inline=False,
         )
         embed.set_footer(text="Lucky Bot Security")
-        await ctx.send(embed=embed)
+        return embed
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def security(self, ctx):
+        """Full security overview. Usage: !security"""
+        await ctx.send(embed=self._build_security_embed(ctx.guild))
+
+    @app_commands.command(name='security', description='Show server security overview')
+    async def security_slash(self, interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="❌ Admin Only",
+                    description="You need Administrator permission to use this command.",
+                    color=0xe74c3c,
+                ),
+                ephemeral=True,
+            )
+        await interaction.response.send_message(embed=self._build_security_embed(interaction.guild))
 
 async def setup(bot):
     await bot.add_cog(Security(bot))
