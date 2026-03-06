@@ -16,7 +16,7 @@ def build_main_embed(p: str) -> discord.Embed:
             "━━━━━━━━━━━━━━━━━━━━━━━\n"
             "📌 **Categories Available:**\n"
             "🛡️ Moderation · ⚙️ Settings · 🔧 Setup\n"
-            "🤖 Bot Status · ℹ️ Basic / Info\n"
+            "🤖 Bot Status · ℹ️ Basic / Info · 🔐 Security\n"
             "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"💡 Your current prefix: `{p}`\n"
             "All commands also work as `/` slash commands."
@@ -209,7 +209,7 @@ def build_moderation_page4(p: str) -> discord.Embed:
             "Lucky Bot **automatically watches** your server:\n"
             "• If anyone not god-tier changes server **name / icon / description / banner**\n"
             "  → They are **auto-muted for 2 minutes** and logged in `#security-logs`\n"
-            "↳ No command needed — always active once `!setup` is run"
+            "↳ No command needed — always active once antinuke is enabled"
         ),
         inline=False,
     )
@@ -284,9 +284,14 @@ def build_setup_embed(p: str) -> discord.Embed:
     embed.add_field(
         name="🚀 Auto Setup",
         value=(
-            f"`{p}setup` — Creates ALL roles, ALL log channels, welcome channel & rules channel\n"
-            "↳ Server Owner or ExtraOwner only\n"
-            "↳ Safe to run again — skips anything that already exists"
+            f"`{p}setup` — Show the full setup menu\n"
+            f"`{p}setup all` — Creates ALL roles, ALL log channels, welcome + rules channels\n"
+            f"`{p}setup basic` — Permission roles only\n"
+            f"`{p}setup moderation` — Mod roles + `#mod-logs`\n"
+            f"`{p}setup security` — `#security-logs` channel + security guide\n"
+            f"`{p}setup welcome` · `{p}setup tickets` · `{p}setup economy`\n"
+            f"`{p}setup leveling` · `{p}setup giveaway` · `{p}setup music`\n"
+            "↳ Server Owner or ExtraOwner only · Safe to re-run — skips existing"
         ),
         inline=False,
     )
@@ -313,12 +318,13 @@ def build_setup_embed(p: str) -> discord.Embed:
     embed.add_field(
         name="🔄 Want to use your OWN roles instead?",
         value=(
-            "No problem! After setup, use **rolebind** to link your existing roles:\n"
+            "After setup, use **rolebind** to link your existing roles:\n"
             f"`{p}rolebind <permission> <your role name>`\n\n"
-            "**Example:** Your server already has a `Moderator` role?\n"
-            f"→ Run `{p}rolebind ban Moderator` and now `Moderator` has ban powers!\n"
-            f"→ Run `{p}rolebind kick Moderator` to stack kick powers too!\n\n"
-            f"To reset back to Lucky Bot defaults: `{p}rolebind ban reset`"
+            f"→ `{p}rolebind ban Moderator` — your 'Moderator' role gets ban powers\n"
+            f"→ `{p}rolebind ban reset` — go back to Lucky Bot defaults\n\n"
+            "**Want to use your OWN channels instead?**\n"
+            f"`{p}channelbind <key> #channel` — point any feature at your own channel\n"
+            f"`{p}channelbind list` — see all current channel assignments"
         ),
         inline=False,
     )
@@ -363,17 +369,153 @@ def build_botstatus_embed(p: str) -> discord.Embed:
     return embed
 
 
+# ──────────────────────────────────────────────
+#  SECURITY PAGES  (3 pages)
+# ──────────────────────────────────────────────
+
+def build_security_page1(p: str) -> discord.Embed:
+    embed = discord.Embed(
+        title="🔐 Security — Page 1 / 3",
+        description=(
+            "**Lucky Bot has the most advanced security system of any bot.**\n"
+            "Antinuke protects against destructive actions by rogue staff or compromised accounts.\n\n"
+            "🔑 **Required:** Server Owner, ExtraOwner, or Bot Owner only."
+        ),
+        color=discord.Color.dark_red(),
+    )
+    embed.add_field(
+        name="🛡️ Overview & Setup",
+        value=(
+            f"`{p}security` — Full security overview for this server\n"
+            f"`{p}antinuke` — Show antinuke status + all module toggles\n"
+            f"`{p}antinuke wizard` — 🧙 Interactive 4-step setup wizard\n"
+            f"`{p}antinuke setup` — Quick-enable with safe defaults\n"
+            f"`{p}antinuke on` / `{p}antinuke off` — Enable / disable antinuke\n"
+            f"`{p}antinuke disable` — Disable + clear all config\n"
+            f"`{p}antinuke reset` — Reset all settings and stats to defaults\n"
+            f"`{p}antinuke settings` — View all thresholds and detailed config"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="⚙️ Punishment & Whitelist",
+        value=(
+            f"`{p}antinuke punish <action>` — Set what happens to violators\n"
+            "↳ Options: `ban` · `kick` · `mute` · `strip` · `derank`\n"
+            f"`{p}antinuke whitelist @user` — Exempt a user from all antinuke\n"
+            f"`{p}antinuke unwhitelist @user` — Remove a user's exemption\n"
+            f"`{p}antinuke whitelistlist` — Show all whitelisted users\n"
+            f"`{p}antinuke threshold <action> <n>` — Set how many actions in 10s triggers protection\n"
+            f"`{p}antinuke logchannel #channel` — Set where security alerts are sent"
+        ),
+        inline=False,
+    )
+    embed.set_footer(text="Page 1/3 — Use ◀ ▶ to navigate • Lucky Bot Security")
+    return embed
+
+
+def build_security_page2(p: str) -> discord.Embed:
+    embed = discord.Embed(
+        title="🔐 Security — Page 2 / 3",
+        description="Individual module toggle commands. Use `on` or `off` after each.",
+        color=discord.Color.dark_red(),
+    )
+    embed.add_field(
+        name="🔨 Antinuke Modules — Ban / Kick / Role / Channel",
+        value=(
+            f"`{p}antinuke antiban <on/off>` — Stop mass bans (threshold: 2 bans/10s)\n"
+            f"`{p}antinuke antikick <on/off>` — Stop mass kicks (threshold: 3/10s)\n"
+            f"`{p}antinuke antirole <on/off>` — Stop mass role deletion + dangerous perm grants\n"
+            "↳ Auto-reverts if admin/dangerous perms are added to a role\n"
+            f"`{p}antinuke antichannel <on/off>` — Stop mass channel create/delete\n"
+            f"`{p}antinuke antiwebhook <on/off>` — Stop mass webhook creation + auto-deletes them\n"
+            f"`{p}antinuke antiprune <on/off>` — Block unauthorized member pruning"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="📢 Message / Guild / Bot Modules",
+        value=(
+            f"`{p}antinuke antieveryone <on/off>` — Block mass @everyone/@here pings\n"
+            f"`{p}antinuke antiguild <on/off>` — Block unauthorized server name/icon/banner changes\n"
+            "↳ Auto-mutes violator for 2 minutes + logs the change\n"
+            f"`{p}antinuke antibot <on/off>` — Block unauthorized bot additions\n"
+            "↳ Kicks the bot AND punishes the person who added it\n"
+            f"`{p}antinuke antimention <on/off>` — Block mass user mention spam\n"
+            f"`{p}antinuke antiemoji <on/off>` — Stop mass emoji deletion\n"
+            f"`{p}antinuke antisticker <on/off>` — Stop mass sticker deletion\n"
+            f"`{p}antinuke antithread <on/off>` — Stop mass thread spam\n"
+            f"`{p}antinuke antivc <on/off>` — Stop mass voice channel deletion\n"
+            f"`{p}antinuke antiintegration <on/off>` — Block unauthorized integrations/OAuth apps\n\n"
+            f"💡 Toggle any single module: `{p}antinuke module <name> on/off`"
+        ),
+        inline=False,
+    )
+    embed.set_footer(text="Page 2/3 — Use ◀ ▶ to navigate • Lucky Bot Security")
+    return embed
+
+
+def build_security_page3(p: str) -> discord.Embed:
+    embed = discord.Embed(
+        title="🔐 Security — Page 3 / 3",
+        description="Antiraid, Panic Mode, Recovery & Stats.",
+        color=discord.Color.dark_red(),
+    )
+    embed.add_field(
+        name="🚨 Antiraid",
+        value=(
+            f"`{p}antiraid` — Show antiraid status overview\n"
+            f"`{p}antiraid on` / `{p}antiraid off` — Enable / disable raid detection\n"
+            f"`{p}antiraid punish <ban|kick|mute>` — Set raid punishment\n"
+            f"`{p}antiraid threshold <joins> <seconds>` — Set raid trigger\n"
+            "↳ Example: `!antiraid threshold 10 8` = 10 joins in 8 seconds = raid\n"
+            f"`{p}antiraid minage <days>` — Block accounts younger than X days (0 = off)\n"
+            f"`{p}antiraid noavatar <on/off>` — Block members with no profile picture\n"
+            f"`{p}antiraid lockdown <on/off>` — Manually lock server (kicks all new joins)\n"
+            f"`{p}antiraid whitelist @user` — Exempt a user from all antiraid checks\n"
+            f"`{p}antiraid logchannel #channel` — Set where raid alerts are sent\n"
+            f"`{p}antiraid stats` — View raid attempt history"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="🚨 Panic & Recovery",
+        value=(
+            f"`{p}antinuke panic` — **EMERGENCY** — instantly blocks ALL new joins + bot adds\n"
+            "↳ Run again to deactivate\n"
+            f"`{p}antinuke recover` — Restore server from last saved snapshot\n"
+            "↳ Snapshots saved automatically every 30 minutes when antinuke is on\n"
+            "↳ Also saved when you run `!antinuke on` or `!antinuke setup`\n\n"
+            f"`{p}antinuke stats` — View all-time threat statistics\n"
+            "↳ Shows every action type and how many times it was triggered"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="💡 Recommended Quick Start",
+        value=(
+            f"1️⃣ `{p}setup security` — creates `#security-logs`\n"
+            f"2️⃣ `{p}antinuke wizard` — guided setup in 4 steps\n"
+            f"3️⃣ `{p}antiraid on` — enable raid detection\n"
+            f"4️⃣ `{p}antiraid minage 7` — block accounts under 7 days old\n"
+            f"5️⃣ `{p}antinuke whitelist @trusted_admin` — whitelist your team"
+        ),
+        inline=False,
+    )
+    embed.set_footer(text="Page 3/3 — Use ◀ ▶ to navigate • Lucky Bot Security")
+    return embed
+
+
 def build_coming_soon_embed(section: str) -> discord.Embed:
     icons = {
-        "security": "🔐",
         "automod": "🤖",
         "welcome": "👋",
         "tickets": "🎫",
-        "fun": "🎉",
+        "fun":     "🎉",
         "economy": "💰",
-        "leveling": "📈",
-        "giveaway": "🎁",
-        "music": "🎵",
+        "leveling":"📈",
+        "giveaway":"🎁",
+        "music":   "🎵",
     }
     icon = icons.get(section, "🚧")
     embed = discord.Embed(
@@ -390,7 +532,7 @@ def build_coming_soon_embed(section: str) -> discord.Embed:
 
 
 # ──────────────────────────────────────────────
-#  VIEWS — DROPDOWN + PAGINATION
+#  PAGE LISTS
 # ──────────────────────────────────────────────
 
 MOD_PAGES = [
@@ -400,26 +542,36 @@ MOD_PAGES = [
     build_moderation_page4,
 ]
 
+SECURITY_PAGES = [
+    build_security_page1,
+    build_security_page2,
+    build_security_page3,
+]
+
+
+# ──────────────────────────────────────────────
+#  VIEWS — DROPDOWN + PAGINATION
+# ──────────────────────────────────────────────
 
 class HelpDropdown(discord.ui.Select):
     def __init__(self, p: str):
         self.p = p
         options = [
-            discord.SelectOption(label="🏠 Home", value="home", description="Main help overview"),
-            discord.SelectOption(label="ℹ️ Basic & Info", value="basic", description="Ping, userinfo, serverinfo, AFK, snipe"),
-            discord.SelectOption(label="🛡️ Moderation", value="mod", description="Warn, mute, kick, ban, purge & more"),
-            discord.SelectOption(label="⚙️ Settings", value="settings", description="Prefix, rolebind, clearlogs"),
-            discord.SelectOption(label="🔧 Setup", value="setup", description="Auto-setup roles & channels"),
-            discord.SelectOption(label="🤖 Bot Status", value="botstatus", description="Status, activity, bot name"),
-            discord.SelectOption(label="🔐 Security", value="security", description="Antinuke & antiraid (coming soon)"),
-            discord.SelectOption(label="🚫 AutoMod", value="automod", description="Auto moderation (coming soon)"),
-            discord.SelectOption(label="👋 Welcome", value="welcome", description="Welcome messages (coming soon)"),
-            discord.SelectOption(label="🎫 Tickets", value="tickets", description="Ticket system (coming soon)"),
-            discord.SelectOption(label="🎉 Fun", value="fun", description="Games & fun commands (coming soon)"),
-            discord.SelectOption(label="💰 Economy", value="economy", description="Coins & shop (coming soon)"),
-            discord.SelectOption(label="📈 Leveling", value="leveling", description="XP & rank system (coming soon)"),
-            discord.SelectOption(label="🎁 Giveaway", value="giveaway", description="Giveaway system (coming soon)"),
-            discord.SelectOption(label="🎵 Music", value="music", description="Music player (coming soon)"),
+            discord.SelectOption(label="🏠 Home",         value="home",      description="Main help overview"),
+            discord.SelectOption(label="ℹ️ Basic & Info", value="basic",     description="Ping, userinfo, serverinfo, AFK, snipe"),
+            discord.SelectOption(label="🛡️ Moderation",  value="mod",       description="Warn, mute, kick, ban, purge & more"),
+            discord.SelectOption(label="🔐 Security",     value="security",  description="Antinuke, antiraid, panic & recovery"),
+            discord.SelectOption(label="⚙️ Settings",     value="settings",  description="Prefix, rolebind, clearlogs"),
+            discord.SelectOption(label="🔧 Setup",         value="setup",     description="Auto-setup roles & channels"),
+            discord.SelectOption(label="🤖 Bot Status",   value="botstatus", description="Status, activity, bot name"),
+            discord.SelectOption(label="🚫 AutoMod",      value="automod",   description="Auto moderation (coming soon)"),
+            discord.SelectOption(label="👋 Welcome",      value="welcome",   description="Welcome messages (coming soon)"),
+            discord.SelectOption(label="🎫 Tickets",      value="tickets",   description="Ticket system (coming soon)"),
+            discord.SelectOption(label="🎉 Fun",          value="fun",       description="Games & fun commands (coming soon)"),
+            discord.SelectOption(label="💰 Economy",      value="economy",   description="Coins & shop (coming soon)"),
+            discord.SelectOption(label="📈 Leveling",     value="leveling",  description="XP & rank system (coming soon)"),
+            discord.SelectOption(label="🎁 Giveaway",     value="giveaway",  description="Giveaway system (coming soon)"),
+            discord.SelectOption(label="🎵 Music",        value="music",     description="Music player (coming soon)"),
         ]
         super().__init__(placeholder="📂 Select a category...", min_values=1, max_values=1, options=options)
 
@@ -432,6 +584,9 @@ class HelpDropdown(discord.ui.Select):
         elif val == "mod":
             view = ModPaginatedView(self.p)
             await interaction.response.edit_message(embed=build_moderation_page1(self.p), view=view)
+        elif val == "security":
+            view = SecurityPaginatedView(self.p)
+            await interaction.response.edit_message(embed=build_security_page1(self.p), view=view)
         elif val == "settings":
             await interaction.response.edit_message(embed=build_settings_embed(self.p), view=self.view)
         elif val == "setup":
@@ -452,25 +607,32 @@ class HelpView(discord.ui.View):
             item.disabled = True
 
 
-class ModPaginatedView(discord.ui.View):
-    def __init__(self, p: str, page: int = 0):
+# ──────────────────────────────────────────────
+#  SHARED PAGINATOR BASE
+# ──────────────────────────────────────────────
+
+class PaginatedView(discord.ui.View):
+    """Generic paginator — subclass and set self.pages."""
+
+    def __init__(self, p: str, pages: list, page: int = 0):
         super().__init__(timeout=120)
         self.p = p
+        self.pages = pages
         self.page = page
         self._update_buttons()
 
     def _update_buttons(self):
         self.prev_button.disabled = self.page == 0
-        self.next_button.disabled = self.page == len(MOD_PAGES) - 1
-        self.page_label.label = f"Page {self.page + 1} / {len(MOD_PAGES)}"
+        self.next_button.disabled = self.page == len(self.pages) - 1
+        self.page_label.label = f"Page {self.page + 1} / {len(self.pages)}"
 
     @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
     async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.page -= 1
         self._update_buttons()
-        await interaction.response.edit_message(embed=MOD_PAGES[self.page](self.p), view=self)
+        await interaction.response.edit_message(embed=self.pages[self.page](self.p), view=self)
 
-    @discord.ui.button(label="Page 1 / 4", style=discord.ButtonStyle.primary, disabled=True)
+    @discord.ui.button(label="Page 1 / ?", style=discord.ButtonStyle.primary, disabled=True)
     async def page_label(self, interaction: discord.Interaction, button: discord.ui.Button):
         pass
 
@@ -478,17 +640,26 @@ class ModPaginatedView(discord.ui.View):
     async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.page += 1
         self._update_buttons()
-        await interaction.response.edit_message(embed=MOD_PAGES[self.page](self.p), view=self)
+        await interaction.response.edit_message(embed=self.pages[self.page](self.p), view=self)
 
     @discord.ui.button(label="🏠 Back to Menu", style=discord.ButtonStyle.success)
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        p = self.p
-        view = HelpView(p)
-        await interaction.response.edit_message(embed=build_main_embed(p), view=view)
+        view = HelpView(self.p)
+        await interaction.response.edit_message(embed=build_main_embed(self.p), view=view)
 
     async def on_timeout(self):
         for item in self.children:
             item.disabled = True
+
+
+class ModPaginatedView(PaginatedView):
+    def __init__(self, p: str, page: int = 0):
+        super().__init__(p, MOD_PAGES, page)
+
+
+class SecurityPaginatedView(PaginatedView):
+    def __init__(self, p: str, page: int = 0):
+        super().__init__(p, SECURITY_PAGES, page)
 
 
 # ──────────────────────────────────────────────
