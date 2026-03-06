@@ -201,7 +201,6 @@ class Moderation(commands.Cog):
                 color=0x3498db,
             )
 
-        await member.timeout(None, reason=f"Unmuted by {author}")
         try:
             await member.timeout(None, reason=f"Unmuted by {author}")
         except discord.Forbidden:
@@ -351,7 +350,6 @@ class Moderation(commands.Cog):
         blocked = self._mod_target_block_embed(guild, author, member, action_word="kick")
         if blocked:
             return blocked, None
-        await member.kick(reason=reason)
         try:
             await member.kick(reason=reason)
         except discord.Forbidden:
@@ -392,7 +390,6 @@ class Moderation(commands.Cog):
         blocked = self._mod_target_block_embed(guild, author, member, action_word="ban")
         if blocked:
             return blocked, None
-        await member.ban(reason=reason)
         try:
             await member.ban(reason=reason)
         except discord.Forbidden:
@@ -1289,10 +1286,6 @@ class Moderation(commands.Cog):
     def _set_warns(self, guild_id, member_id, warns):
         self.warn_db.setdefault(guild_id, {})[member_id] = warns
 
-    def _extract_reason(self, args: str):
-        if not args:
-            return "No reason provided"
-        return args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
     def _warning_target_block_embed(self, member):
         if member.bot:
             return discord.Embed(
@@ -1319,18 +1312,6 @@ class Moderation(commands.Cog):
                 description=f"You cannot {action_word} yourself.",
                 color=0xe74c3c,
             )
-        if member.id == guild.owner_id or member.id in self.extraowners.get(guild.id, set()):
-            return self.protected_error_embed(member)
-        if self.has_god_bypass(member) and not self.is_god_tier(author):
-            return self.bypass_error_embed(member)
-        return None
-
-    def _warning_target_block_embed(self, guild, author, member):
-        blocked = self._mod_target_block_embed(guild, author, member, action_word="warn")
-        if blocked:
-            return blocked
-        return None
-
         if self.has_god_bypass(member) and not self.is_god_tier(author):
             return self.bypass_error_embed(member)
         if member.id == guild.owner_id:
@@ -1530,9 +1511,6 @@ class Moderation(commands.Cog):
                          member: discord.Member,
                          duration: str = "10m",
                          reason: str = "No reason provided"):
-        parsed, err = self._validate_duration(duration, max_days=28, field_name="Mute")
-        if err:
-            return await interaction.response.send_message(embed=err, ephemeral=True)
         parsed = self.parse_time(duration)
         if not parsed:
             return await interaction.response.send_message(embed=discord.Embed(
@@ -1677,10 +1655,6 @@ class Moderation(commands.Cog):
         if blocked:
             return await ctx.reply(embed=blocked)
         reason = self._extract_reason(args)
-        seconds, err = self._validate_duration(time, max_days=28, field_name="Tempban")
-        if err:
-            return await ctx.reply(embed=err)
-        await member.ban(reason=f"[Tempban: {time}] {reason}")
         seconds = self.parse_time(time)
         if not seconds:
             return await ctx.reply(embed=discord.Embed(
@@ -1722,10 +1696,6 @@ class Moderation(commands.Cog):
         blocked = self._mod_target_block_embed(interaction.guild, interaction.user, member, action_word="tempban")
         if blocked:
             return await interaction.response.send_message(embed=blocked, ephemeral=True)
-        seconds, err = self._validate_duration(duration, max_days=28, field_name="Tempban")
-        if err:
-            return await interaction.response.send_message(embed=err, ephemeral=True)
-        await member.ban(reason=f"[Tempban: {duration}] {reason}")
         seconds = self.parse_time(duration)
         if not seconds:
             return await interaction.response.send_message(embed=discord.Embed(

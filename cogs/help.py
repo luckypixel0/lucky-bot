@@ -25,7 +25,6 @@ class Help(commands.Cog):
                 f"`{p}prefix` — Show current prefix\n"
                 f"`{p}setprefix <new>` — Change server prefix (owner only)\n"
                 f"`{p}setprefix reset` — Reset to default `!`\n"
-                f"`{p}noprefix @user` — Toggle no-prefix access (bot owner only)"
                 f"`{p}noprefix @user` — Toggle no-prefix access (bot owner only)\n"
                 f"`{p}ping` — Check bot latency"
             ),
