@@ -107,7 +107,7 @@ async def on_ready():
         status=discord.Status.online,
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name="bilota is working in this app 😼 | uss !help for more info "
+            name="bilota is working in this app 😼 | use !help for more info "
         )
     )
 
