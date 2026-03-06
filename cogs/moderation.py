@@ -17,8 +17,7 @@ class Moderation(commands.Cog):
         self.extraowners = {}
         self.role_bindings = {}
 
-        # ── Hierarchy ──────────────────────────
-        # ban.exe (4) > kick.exe (3) > mute.exe (2) > warn.exe (1)
+        # ban.exe(4) > kick.exe(3) > mute.exe(2) > warn.exe(1)
         self.DEFAULT_ROLES = {
             'warn':       'warn.exe',
             'mute':       'mute.exe',
@@ -32,6 +31,17 @@ class Moderation(commands.Cog):
             'role_giver': 'role.giver.god',
             'god_bypass': 'god.bypass',
         }
+
+        self.LOG_CHANNELS = [
+            'mod-logs',
+            'security-logs',
+            'ticket-logs',
+            'music-logs',
+            'economy-logs',
+            'leveling-logs',
+            'giveaway-logs',
+            'server-logs',
+        ]
 
     # ══════════════════════════════════════════
     #   PERMISSION HELPERS
@@ -75,26 +85,19 @@ class Moderation(commands.Cog):
 
     def perm_error_embed(self, action, member_level=0):
         needed = {
-            'warn':    '`warn.exe`, `kick.exe`, `mute.exe`, or `ban.exe`',
-            'mute':    '`mute.exe`, `kick.exe`, or `ban.exe`',
-            'kick':    '`kick.exe` or `ban.exe`',
-            'ban':     '`ban.exe`',
-            'tempban': '`ban.exe`',
-            'purge':   '`purge.exe`',
-            'lock':    '`lock.exe`',
-            'nick':    '`nick.exe`',
-            'announce':'`announce.exe`',
+            'warn':     '`warn.exe`, `kick.exe`, `mute.exe`, or `ban.exe`',
+            'mute':     '`mute.exe`, `kick.exe`, or `ban.exe`',
+            'kick':     '`kick.exe` or `ban.exe`',
+            'ban':      '`ban.exe`',
+            'tempban':  '`ban.exe`',
+            'purge':    '`purge.exe`',
+            'lock':     '`lock.exe`',
+            'nick':     '`nick.exe`',
+            'announce': '`announce.exe`',
         }
-        level_names = {1:'warn.exe', 2:'mute.exe', 3:'kick.exe', 4:'ban.exe'}
-        embed = discord.Embed(
-            title="🚫 Missing Role Permission",
-            color=0xe74c3c
-        )
-        embed.add_field(
-            name="Required Role",
-            value=needed.get(action, 'required role'),
-            inline=False
-        )
+        level_names = {1: 'warn.exe', 2: 'mute.exe', 3: 'kick.exe', 4: 'ban.exe'}
+        embed = discord.Embed(title="🚫 Missing Role Permission", color=0xe74c3c)
+        embed.add_field(name="Required Role", value=needed.get(action, 'required role'), inline=False)
         if member_level > 0:
             embed.add_field(
                 name="Your Current Level",
@@ -112,7 +115,7 @@ class Moderation(commands.Cog):
     def bypass_error_embed(self, member):
         return discord.Embed(
             title="🛡️ God Bypass Active",
-            description=f"{member.mention} has the `god.bypass` role — the bot cannot take action on them!",
+            description=f"{member.mention} has `god.bypass` — the bot cannot act on them!",
             color=0xe74c3c
         )
 
@@ -124,7 +127,7 @@ class Moderation(commands.Cog):
         )
 
     # ══════════════════════════════════════════
-    #   TIME HELPERS
+    #   HELPERS
     # ══════════════════════════════════════════
 
     def parse_time(self, text):
@@ -134,15 +137,29 @@ class Moderation(commands.Cog):
             return int(match.group(1)) * units[match.group(2)]
         return None
 
-    # ══════════════════════════════════════════
-    #   LOG HELPERS
-    # ══════════════════════════════════════════
+    async def send_log(self, guild, embed):
+        log_channel = discord.utils.get(guild.text_channels, name='mod-logs')
+        if log_channel:
+            try:
+                await log_channel.send(embed=embed)
+            except:
+                pass
 
-    
+    def log_embed(self, title, color, **fields):
+        embed = discord.Embed(
+            title=title, color=color,
+            timestamp=datetime.datetime.utcnow()
+        )
+        for name, value in fields.items():
+            embed.add_field(
+                name=name.replace('_', ' ').title(),
+                value=str(value), inline=True
+            )
+        embed.set_footer(text="Lucky Bot Mod Logs")
+        return embed
 
     # ══════════════════════════════════════════
-    #   SHARED COMMAND LOGIC
-    #   (used by both prefix and slash versions)
+    #   SHARED LOGIC
     # ══════════════════════════════════════════
 
     async def _warn(self, guild, author, member, reason):
@@ -150,7 +167,6 @@ class Moderation(commands.Cog):
             return self.perm_error_embed('warn', self.get_hierarchy_level(author)), None
         if self.has_god_bypass(member) and not self.is_god_tier(author):
             return self.bypass_error_embed(member), None
-
         guild_id = guild.id
         if guild_id not in self.warn_db:
             self.warn_db[guild_id] = {}
@@ -158,34 +174,23 @@ class Moderation(commands.Cog):
             self.warn_db[guild_id][member.id] = []
         self.warn_db[guild_id][member.id].append(reason)
         count = len(self.warn_db[guild_id][member.id])
-
         embed = discord.Embed(title="⚠️ Member Warned", color=0xf39c12)
         embed.add_field(name="User", value=member.mention)
         embed.add_field(name="Reason", value=reason)
         embed.add_field(name="Total Warnings", value=f"⚠️ {count}")
         embed.add_field(name="Moderator", value=author.mention)
         embed.set_footer(text="Lucky Bot Moderation")
-
-        log = self.log_embed("⚠️ Member Warned", 0xf39c12,
-            user=f"{member} ({member.id})",
-            reason=reason,
-            total_warnings=str(count),
-            moderator=str(author)
-        )
-
         try:
-            await member.send(
-                embed=discord.Embed(
-                    title=f"⚠️ You were warned in {guild.name}",
-                    description=f"**Reason:** {reason}\n**Total warnings:** {count}",
-                    color=0xf39c12
-                )
-            )
+            await member.send(embed=discord.Embed(
+                title=f"⚠️ You were warned in {guild.name}",
+                description=f"**Reason:** {reason}\n**Total warnings:** {count}",
+                color=0xf39c12
+            ))
         except:
             pass
-
-        await self.send_log(guild, log)
-
+        await self.send_log(guild, self.log_embed("⚠️ Member Warned", 0xf39c12,
+            user=f"{member} ({member.id})", reason=reason,
+            total_warnings=str(count), moderator=str(author)))
         extra = None
         if count >= 3:
             extra = discord.Embed(
@@ -204,10 +209,8 @@ class Moderation(commands.Cog):
             return self.protected_error_embed(member), None
         if member.id in self.extraowners.get(guild.id, set()):
             return self.protected_error_embed(member), None
-
         until = discord.utils.utcnow() + datetime.timedelta(seconds=duration_seconds)
         await member.timeout(until, reason=reason)
-
         embed = discord.Embed(title="🔇 Member Muted", color=0x95a5a6)
         embed.add_field(name="User", value=member.mention)
         embed.add_field(name="Duration", value=duration_text)
@@ -215,13 +218,6 @@ class Moderation(commands.Cog):
         embed.add_field(name="Unmuted", value=f"<t:{int(until.timestamp())}:R>")
         embed.add_field(name="Moderator", value=author.mention)
         embed.set_footer(text="Lucky Bot Moderation")
-
-        log = self.log_embed("🔇 Member Muted", 0x95a5a6,
-            user=f"{member} ({member.id})",
-            duration=duration_text,
-            reason=reason,
-            moderator=str(author)
-        )
         try:
             await member.send(embed=discord.Embed(
                 title=f"🔇 You were muted in {guild.name}",
@@ -230,7 +226,9 @@ class Moderation(commands.Cog):
             ))
         except:
             pass
-        await self.send_log(guild, log)
+        await self.send_log(guild, self.log_embed("🔇 Member Muted", 0x95a5a6,
+            user=f"{member} ({member.id})", duration=duration_text,
+            reason=reason, moderator=str(author)))
         return embed, None
 
     async def _kick(self, guild, author, member, reason):
@@ -238,10 +236,9 @@ class Moderation(commands.Cog):
             lvl = self.get_hierarchy_level(author)
             embed = self.perm_error_embed('kick', lvl)
             if lvl in (1, 2):
-                lvl_names = {1: 'warn.exe', 2: 'mute.exe'}
                 embed.add_field(
                     name="💡 Note",
-                    value=f"You have `{lvl_names[lvl]}` — you can only {'warn' if lvl==1 else 'mute and warn'}. Need `kick.exe` or `ban.exe` to kick.",
+                    value=f"You have `{'warn.exe' if lvl==1 else 'mute.exe'}` — need `kick.exe` or `ban.exe` to kick.",
                     inline=False
                 )
             return embed, None
@@ -251,19 +248,12 @@ class Moderation(commands.Cog):
             return self.protected_error_embed(member), None
         if member.id in self.extraowners.get(guild.id, set()):
             return self.protected_error_embed(member), None
-
         await member.kick(reason=reason)
         embed = discord.Embed(title="👢 Member Kicked", color=0xe74c3c)
         embed.add_field(name="User", value=member.mention)
         embed.add_field(name="Reason", value=reason)
         embed.add_field(name="Moderator", value=author.mention)
         embed.set_footer(text="Lucky Bot Moderation")
-
-        log = self.log_embed("👢 Member Kicked", 0xe74c3c,
-            user=f"{member} ({member.id})",
-            reason=reason,
-            moderator=str(author)
-        )
         try:
             await member.send(embed=discord.Embed(
                 title=f"👢 You were kicked from {guild.name}",
@@ -272,7 +262,8 @@ class Moderation(commands.Cog):
             ))
         except:
             pass
-        await self.send_log(guild, log)
+        await self.send_log(guild, self.log_embed("👢 Member Kicked", 0xe74c3c,
+            user=f"{member} ({member.id})", reason=reason, moderator=str(author)))
         return embed, None
 
     async def _ban(self, guild, author, member, reason):
@@ -280,7 +271,7 @@ class Moderation(commands.Cog):
             lvl = self.get_hierarchy_level(author)
             embed = self.perm_error_embed('ban', lvl)
             if lvl > 0:
-                lvl_names = {1:'warn.exe', 2:'mute.exe', 3:'kick.exe'}
+                lvl_names = {1: 'warn.exe', 2: 'mute.exe', 3: 'kick.exe'}
                 embed.add_field(
                     name="💡 Note",
                     value=f"You have `{lvl_names.get(lvl,'unknown')}` — need `ban.exe` to ban.",
@@ -293,19 +284,12 @@ class Moderation(commands.Cog):
             return self.protected_error_embed(member), None
         if member.id in self.extraowners.get(guild.id, set()):
             return self.protected_error_embed(member), None
-
         await member.ban(reason=reason)
         embed = discord.Embed(title="🔨 Member Banned", color=0xc0392b)
         embed.add_field(name="User", value=member.mention)
         embed.add_field(name="Reason", value=reason)
         embed.add_field(name="Moderator", value=author.mention)
         embed.set_footer(text="Lucky Bot Moderation")
-
-        log = self.log_embed("🔨 Member Banned", 0xc0392b,
-            user=f"{member} ({member.id})",
-            reason=reason,
-            moderator=str(author)
-        )
         try:
             await member.send(embed=discord.Embed(
                 title=f"🔨 You were banned from {guild.name}",
@@ -314,7 +298,8 @@ class Moderation(commands.Cog):
             ))
         except:
             pass
-        await self.send_log(guild, log)
+        await self.send_log(guild, self.log_embed("🔨 Member Banned", 0xc0392b,
+            user=f"{member} ({member.id})", reason=reason, moderator=str(author)))
         return embed, None
 
     # ══════════════════════════════════════════
@@ -346,9 +331,9 @@ class Moderation(commands.Cog):
             'afk':       '`!afk` or `!afk reason`',
             'note':      '`!note @user text`',
             'notes':     '`!notes @user`',
-            'role':      '`!role @user RoleName`',
             'giverole':  '`!giverole @user warn.exe`',
             'takerole':  '`!takerole @user warn.exe`',
+            'clearlogs': '`!clearlogs` / `!clearlogs mod-logs` / `!clearlogs all`',
         }
         cmd = ctx.command.name if ctx.command else None
 
@@ -365,9 +350,7 @@ class Moderation(commands.Cog):
 
         if isinstance(error, commands.MissingRequiredArgument):
             embed = discord.Embed(
-                title=f"❌ Missing Argument in `!{cmd}`",
-                color=0xe74c3c
-            )
+                title=f"❌ Missing Argument in `!{cmd}`", color=0xe74c3c)
             if cmd in usage:
                 embed.add_field(name="📖 How to use", value=usage[cmd], inline=False)
             return await ctx.reply(embed=embed)
@@ -393,12 +376,11 @@ class Moderation(commands.Cog):
             return await ctx.reply(embed=embed)
 
         if isinstance(error, commands.CommandOnCooldown):
-            embed = discord.Embed(
+            return await ctx.reply(embed=discord.Embed(
                 title="⏰ Slow Down!",
                 description=f"Try again in **{error.retry_after:.1f}s**",
                 color=0xf39c12
-            )
-            return await ctx.reply(embed=embed)
+            ))
 
         print(f'Unhandled error in !{cmd}: {error}')
 
@@ -410,8 +392,7 @@ class Moderation(commands.Cog):
             del self.afk_db[message.author.id]
             try:
                 await message.author.edit(
-                    nick=message.author.display_name.replace('[AFK] ', '')
-                )
+                    nick=message.author.display_name.replace('[AFK] ', ''))
             except:
                 pass
             msg = await message.channel.send(embed=discord.Embed(
@@ -468,9 +449,7 @@ class Moderation(commands.Cog):
             return
         try:
             async for entry in after.audit_logs(
-                limit=1,
-                action=discord.AuditLogAction.guild_update
-            ):
+                limit=1, action=discord.AuditLogAction.guild_update):
                 user = entry.user
                 member = after.get_member(user.id)
                 if not member or member.bot:
@@ -535,9 +514,8 @@ class Moderation(commands.Cog):
     async def extraowner_add(self, ctx, member: discord.Member):
         if ctx.author.id != ctx.guild.owner_id:
             return await ctx.reply(embed=discord.Embed(
-                title="❌ Owner Only",
-                description="Only the **server owner** can add ExtraOwners!",
-                color=0xe74c3c
+                title="❌ Owner Only", color=0xe74c3c,
+                description="Only the **server owner** can add ExtraOwners!"
             ))
         guild_id = ctx.guild.id
         if guild_id not in self.extraowners:
@@ -581,10 +559,10 @@ class Moderation(commands.Cog):
             color=0xf1c40f
         ))
 
-    # Slash versions
     @app_commands.command(name='extraowner', description='Manage ExtraOwners (server owner only)')
     @app_commands.describe(action='add/remove/list', member='Target member')
-    async def extraowner_slash(self, interaction: discord.Interaction, action: str, member: discord.Member = None):
+    async def extraowner_slash(self, interaction: discord.Interaction,
+                               action: str, member: discord.Member = None):
         if interaction.user.id != interaction.guild.owner_id:
             return await interaction.response.send_message(embed=discord.Embed(
                 title="❌ Owner Only", color=0xe74c3c,
@@ -604,7 +582,8 @@ class Moderation(commands.Cog):
             if guild_id in self.extraowners:
                 self.extraowners[guild_id].discard(member.id)
             await interaction.response.send_message(embed=discord.Embed(
-                title="✅ Removed", description=f"{member.mention} removed from ExtraOwners.",
+                title="✅ Removed",
+                description=f"{member.mention} removed from ExtraOwners.",
                 color=0x2ecc71
             ))
         elif action == 'list':
@@ -627,7 +606,6 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def rolebind(self, ctx, perm: str = "list", *, role: discord.Role = None):
-        """Reassign Lucky Bot permission roles. Owner/ExtraOwner only."""
         if not self.is_god_tier(ctx.author):
             return await ctx.reply(embed=discord.Embed(
                 title="❌ No Permission",
@@ -635,15 +613,13 @@ class Moderation(commands.Cog):
                 color=0xe74c3c
             ))
         if perm == "list":
-            guild_id = ctx.guild.id
-            bindings = self.role_bindings.get(guild_id, {})
+            bindings = self.role_bindings.get(ctx.guild.id, {})
             embed = discord.Embed(title="🔗 Role Bindings", color=0x3498db)
             for p, default in self.DEFAULT_ROLES.items():
                 current = bindings.get(p, default)
                 embed.add_field(
                     name=f"{'✏️' if p in bindings else '✅'} {p}",
-                    value=f"`{current}`",
-                    inline=True
+                    value=f"`{current}`", inline=True
                 )
             return await ctx.send(embed=embed)
         valid = list(self.DEFAULT_ROLES.keys())
@@ -674,12 +650,11 @@ class Moderation(commands.Cog):
         ))
 
     # ══════════════════════════════════════════
-    #   ROLE GIVER
+    #   ROLE GIVER/TAKER
     # ══════════════════════════════════════════
 
     @commands.command(name='giverole')
     async def give_role(self, ctx, member: discord.Member, *, role_name: str):
-        """Give a Lucky Bot role. Usage: !giverole @user warn.exe"""
         guild_id = ctx.guild.id
         target_role = discord.utils.get(ctx.guild.roles, name=role_name)
         if not target_role:
@@ -711,7 +686,8 @@ class Moderation(commands.Cog):
                 if target_level < author_level:
                     await member.add_roles(target_role)
                     await self.send_log(ctx.guild, self.log_embed("🏷️ Role Given", 0x3498db,
-                        to=f"{member} ({member.id})", role=target_role.name, given_by=str(ctx.author)))
+                        to=f"{member} ({member.id})", role=target_role.name,
+                        given_by=str(ctx.author)))
                     return await ctx.reply(embed=discord.Embed(
                         title="✅ Role Given",
                         description=f"Given `{target_role.name}` to {member.mention}!",
@@ -744,47 +720,12 @@ class Moderation(commands.Cog):
             color=0xe74c3c
         ))
 
-    @app_commands.command(name='giverole', description='Give a Lucky Bot permission role')
-    @app_commands.describe(member='Target member', role_name='Role name e.g. warn.exe')
-    async def giverole_slash(self, interaction: discord.Interaction, member: discord.Member, role_name: str):
-        ctx_like = type('obj', (object,), {
-            'guild': interaction.guild,
-            'author': interaction.user,
-            'reply': interaction.response.send_message
-        })()
-        guild_id = interaction.guild.id
-        target_role = discord.utils.get(interaction.guild.roles, name=role_name)
-        if not target_role:
-            return await interaction.response.send_message(embed=discord.Embed(
-                title="❌ Role Not Found", color=0xe74c3c,
-                description=f"`{role_name}` doesn't exist!"
-            ), ephemeral=True)
-        lucky_roles = {self.get_role_name(guild_id, p): p for p in self.DEFAULT_ROLES}
-        if target_role.name not in lucky_roles:
-            return await interaction.response.send_message(embed=discord.Embed(
-                title="❌ Not a Lucky Bot Role", color=0xe74c3c
-            ), ephemeral=True)
-        if self.is_god_tier(interaction.user):
-            await member.add_roles(target_role)
-            return await interaction.response.send_message(embed=discord.Embed(
-                title="✅ Role Given",
-                description=f"Given `{target_role.name}` to {member.mention}!",
-                color=0x2ecc71
-            ))
-        await interaction.response.send_message(embed=discord.Embed(
-            title="❌ No Permission", color=0xe74c3c,
-            description="Need `role.giver.god` or god tier!"
-        ), ephemeral=True)
-
     @commands.command(name='takerole')
     async def take_role(self, ctx, member: discord.Member, *, role_name: str):
-        """Remove a Lucky Bot role. Usage: !takerole @user warn.exe"""
-        guild_id = ctx.guild.id
         target_role = discord.utils.get(ctx.guild.roles, name=role_name)
         if not target_role:
             return await ctx.reply(embed=discord.Embed(
-                title="❌ Role Not Found", color=0xe74c3c
-            ))
+                title="❌ Role Not Found", color=0xe74c3c))
         if not self.is_god_tier(ctx.author) and not self.has_role_perm(ctx.author, 'role_giver'):
             return await ctx.reply(embed=discord.Embed(
                 title="❌ No Permission",
@@ -807,7 +748,6 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def setup(self, ctx):
-        """Auto-setup everything. Owner/ExtraOwner only."""
         if not self.is_god_tier(ctx.author):
             return await ctx.reply(embed=discord.Embed(
                 title="❌ No Permission",
@@ -816,13 +756,13 @@ class Moderation(commands.Cog):
             ))
         status_msg = await ctx.send(embed=discord.Embed(
             title="⚙️ Setting up Lucky Bot...",
-            description="Please wait!",
+            description="Please wait! This may take a moment.",
             color=0x3498db
         ))
         results = []
         guild = ctx.guild
 
-        # All roles to create
+        # ── Create permission roles ────────────
         roles_to_create = [
             ('ban.exe',        0xc0392b, 'Can ban, kick, mute, warn'),
             ('kick.exe',       0xe67e22, 'Can kick, mute, warn'),
@@ -832,11 +772,10 @@ class Moderation(commands.Cog):
             ('lock.exe',       0x9b59b6, 'Can lock/unlock channels'),
             ('nick.exe',       0x1abc9c, 'Can change nicknames'),
             ('announce.exe',   0x2ecc71, 'Can make announcements'),
-            ('audit.viewer',   0x95a5a6, 'Can view mod-logs'),
+            ('audit.viewer',   0x95a5a6, 'Can view log channels'),
             ('role.giver.god', 0xe91e63, 'Can give Lucky Bot roles'),
             ('god.bypass',     0xffd700, 'Immune to bot moderation'),
         ]
-
         for role_name, color, desc in roles_to_create:
             existing = discord.utils.get(guild.roles, name=role_name)
             if existing:
@@ -848,53 +787,71 @@ class Moderation(commands.Cog):
                         color=discord.Color(color),
                         reason=f"Lucky Bot setup — {desc}"
                     )
-                    results.append(f"✅ Created `{role_name}`")
+                    results.append(f"✅ Created role `{role_name}`")
                 except Exception as e:
                     results.append(f"❌ Failed `{role_name}`: {e}")
 
-        # mod-logs channel
-        try:
-            existing_logs = discord.utils.get(guild.text_channels, name='mod-logs')
-            if existing_logs:
-                results.append("✅ `#mod-logs` already exists")
-                log_channel = existing_logs
-            else:
-                audit_role = discord.utils.get(guild.roles, name='audit.viewer')
-                overwrites = {
-                    guild.default_role: discord.PermissionOverwrite(
-                        view_channel=False, send_messages=False
-                    ),
-                    guild.me: discord.PermissionOverwrite(
-                        view_channel=True, send_messages=True, embed_links=True
-                    ),
-                }
-                if audit_role:
-                    overwrites[audit_role] = discord.PermissionOverwrite(
-                        view_channel=True, send_messages=False, read_message_history=True
-                    )
-                for role in guild.roles:
-                    if role.permissions.administrator:
-                        overwrites[role] = discord.PermissionOverwrite(
-                            view_channel=True, send_messages=False
-                        )
-                mod_cat = (
-                    discord.utils.get(guild.categories, name='Mod') or
-                    discord.utils.get(guild.categories, name='Staff') or
-                    discord.utils.get(guild.categories, name='Admin')
+        # ── Create Logs category ───────────────
+        logs_category = (
+            discord.utils.get(guild.categories, name='Logs') or
+            discord.utils.get(guild.categories, name='logs')
+        )
+        if not logs_category:
+            try:
+                logs_category = await guild.create_category(
+                    name='Logs',
+                    reason='Lucky Bot setup — log channels'
                 )
-                log_channel = await guild.create_text_channel(
-                    name='mod-logs',
-                    overwrites=overwrites,
-                    category=mod_cat,
-                    topic='🔒 Private Lucky Bot mod logs'
-                )
-                results.append("✅ Created private `#mod-logs`")
-        except Exception as e:
-            results.append(f"❌ Failed `#mod-logs`: {e}")
-            log_channel = None
+                results.append("✅ Created `Logs` category")
+            except Exception as e:
+                results.append(f"❌ Failed `Logs` category: {e}")
+                logs_category = None
 
-        # welcome + rules channels
-        for ch_name, topic in [('welcome','👋 Welcome!'), ('rules','📋 Server rules')]:
+        # ── Create all log channels ────────────
+        audit_role = discord.utils.get(guild.roles, name=self.get_role_name(guild.id, 'audit'))
+
+        log_channels_to_create = [
+            ('mod-logs',      '🛡️ Private moderation logs — Lucky Bot'),
+            ('security-logs', '🔒 Private security logs — Lucky Bot'),
+            ('ticket-logs',   '🎫 Private ticket logs — Lucky Bot'),
+            ('music-logs',    '🎵 Music activity logs — Lucky Bot'),
+            ('economy-logs',  '💰 Economy logs — Lucky Bot'),
+            ('leveling-logs', '⭐ Leveling logs — Lucky Bot'),
+            ('giveaway-logs', '🎁 Giveaway logs — Lucky Bot'),
+            ('server-logs',   '📋 General server event logs — Lucky Bot'),
+        ]
+
+        for ch_name, topic in log_channels_to_create:
+            try:
+                existing = discord.utils.get(guild.text_channels, name=ch_name)
+                if existing:
+                    results.append(f"✅ `#{ch_name}` already exists")
+                else:
+                    overwrites = {
+                        guild.default_role: discord.PermissionOverwrite(
+                            view_channel=False, send_messages=False),
+                        guild.me: discord.PermissionOverwrite(
+                            view_channel=True, send_messages=True, embed_links=True),
+                    }
+                    if audit_role:
+                        overwrites[audit_role] = discord.PermissionOverwrite(
+                            view_channel=True, send_messages=False, read_message_history=True)
+                    for role in guild.roles:
+                        if role.permissions.administrator:
+                            overwrites[role] = discord.PermissionOverwrite(
+                                view_channel=True, send_messages=False)
+                    await guild.create_text_channel(
+                        name=ch_name,
+                        overwrites=overwrites,
+                        category=logs_category,
+                        topic=topic
+                    )
+                    results.append(f"✅ Created private `#{ch_name}`")
+            except Exception as e:
+                results.append(f"❌ Failed `#{ch_name}`: {e}")
+
+        # ── Other channels ─────────────────────
+        for ch_name, topic in [('welcome', '👋 Welcome!'), ('rules', '📋 Server rules')]:
             try:
                 if not discord.utils.get(guild.text_channels, name=ch_name):
                     await guild.create_text_channel(name=ch_name, topic=topic)
@@ -907,6 +864,7 @@ class Moderation(commands.Cog):
         self.massban_enabled[guild.id] = False
         results.append("✅ Massban locked by default")
 
+        # ── Final embed ────────────────────────
         embed = discord.Embed(
             title="✅ Lucky Bot Setup Complete!",
             description="\n".join(results),
@@ -933,22 +891,43 @@ class Moderation(commands.Cog):
             inline=True
         )
         embed.add_field(
+            name="📋 Log Channels Created",
+            value=(
+                "`#mod-logs` — moderation actions\n"
+                "`#security-logs` — antinuke/raid alerts\n"
+                "`#ticket-logs` — ticket activity\n"
+                "`#music-logs` — music activity\n"
+                "`#economy-logs` — economy events\n"
+                "`#leveling-logs` — level ups\n"
+                "`#giveaway-logs` — giveaway events\n"
+                "`#server-logs` — joins, leaves, edits"
+            ),
+            inline=False
+        )
+        embed.add_field(
             name="⚡ Next Steps",
             value=(
                 "1. Give `role.giver.god` to your admins\n"
                 "2. Give `ban.exe` to your moderators\n"
                 "3. Use `!extraowner add @user` for trusted people\n"
-                "4. Enable security: `!antinuke on` `!antiraid on`"
+                "4. Enable security: `!antinuke on` `!antiraid on`\n"
+                "5. Use `!clearlogs` to manage log channels"
             ),
             inline=False
         )
         embed.set_footer(text=f"Set up by {ctx.author} • Lucky Bot")
         await status_msg.edit(embed=embed)
 
-        if log_channel:
-            await log_channel.send(embed=discord.Embed(
+        # Welcome message in mod-logs
+        mod_logs = discord.utils.get(guild.text_channels, name='mod-logs')
+        if mod_logs:
+            await mod_logs.send(embed=discord.Embed(
                 title="🍀 Lucky Bot is Ready!",
-                description=f"Set up by {ctx.author.mention}\nAll mod actions logged here.",
+                description=(
+                    f"Set up by {ctx.author.mention}\n"
+                    "All moderation actions will be logged here.\n"
+                    "Only `audit.viewer` and admins can see this channel."
+                ),
                 color=0x2ecc71
             ))
 
@@ -958,12 +937,242 @@ class Moderation(commands.Cog):
         await self.setup(ctx)
 
     # ══════════════════════════════════════════
+    #   CLEAR LOGS
+    # ══════════════════════════════════════════
+
+    @commands.command(name='clearlogs')
+    async def clearlogs_prefix(self, ctx, channel_name: str = None):
+        """
+        Clear log channels.
+        Usage: !clearlogs              ← shows menu
+               !clearlogs mod-logs     ← clears specific channel
+               !clearlogs all          ← clears ALL log channels
+        Owner/ExtraOwner only.
+        """
+        if not self.is_god_tier(ctx.author):
+            return await ctx.reply(embed=discord.Embed(
+                title="❌ No Permission",
+                description="Only **Owner** or **ExtraOwners** can clear logs!",
+                color=0xe74c3c
+            ))
+
+        # Show menu
+        if channel_name is None:
+            embed = discord.Embed(
+                title="🗑️ Clear Logs — Menu",
+                description="Which log channel do you want to clear?",
+                color=0xe74c3c
+            )
+            embed.add_field(
+                name="Clear a specific channel",
+                value="\n".join([f"`!clearlogs {ch}`" for ch in self.LOG_CHANNELS]),
+                inline=True
+            )
+            embed.add_field(
+                name="Clear everything",
+                value="`!clearlogs all` — wipes ALL log channels at once",
+                inline=True
+            )
+            embed.set_footer(text="⚠️ This cannot be undone!")
+            return await ctx.send(embed=embed)
+
+        # Clear ALL
+        if channel_name.lower() == 'all':
+            await ctx.send(embed=discord.Embed(
+                title="⚠️ Clear ALL Log Channels?",
+                description=(
+                    "This will wipe **all 8 log channels!**\n\n"
+                    + "\n".join([f"• `#{ch}`" for ch in self.LOG_CHANNELS])
+                    + "\n\n**Reply `yes` to confirm.**"
+                ),
+                color=0xe74c3c
+            ))
+            def check(m):
+                return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() == 'yes'
+            try:
+                await self.bot.wait_for('message', check=check, timeout=15)
+            except asyncio.TimeoutError:
+                return await ctx.send(embed=discord.Embed(
+                    title="❌ Cancelled", description="Timed out — nothing cleared.",
+                    color=0xe74c3c
+                ))
+            cleared, failed, skipped = [], [], []
+            for ch_name in self.LOG_CHANNELS:
+                channel = discord.utils.get(ctx.guild.text_channels, name=ch_name)
+                if not channel:
+                    skipped.append(ch_name)
+                    continue
+                try:
+                    await channel.purge(limit=None)
+                    cleared.append(ch_name)
+                    await channel.send(embed=discord.Embed(
+                        title="🗑️ Logs Cleared",
+                        description=f"Cleared by {ctx.author.mention}",
+                        color=0x2ecc71,
+                        timestamp=datetime.datetime.utcnow()
+                    ))
+                except Exception as e:
+                    failed.append(f"{ch_name}")
+            result = discord.Embed(
+                title="🗑️ All Logs Cleared",
+                color=0x2ecc71,
+                timestamp=datetime.datetime.utcnow()
+            )
+            if cleared:
+                result.add_field(
+                    name=f"✅ Cleared ({len(cleared)})",
+                    value="\n".join([f"`#{ch}`" for ch in cleared]),
+                    inline=False
+                )
+            if skipped:
+                result.add_field(
+                    name=f"⏭️ Not found ({len(skipped)})",
+                    value="\n".join([f"`#{ch}`" for ch in skipped]),
+                    inline=False
+                )
+            if failed:
+                result.add_field(
+                    name=f"❌ Failed ({len(failed)})",
+                    value="\n".join(failed),
+                    inline=False
+                )
+            result.add_field(name="Cleared by", value=ctx.author.mention)
+            return await ctx.send(embed=result)
+
+        # Clear specific channel
+        ch_name = channel_name.lstrip('#').lower()
+        if ch_name not in self.LOG_CHANNELS:
+            return await ctx.reply(embed=discord.Embed(
+                title="❌ Invalid Log Channel",
+                description=(
+                    f"`{channel_name}` is not a Lucky Bot log channel!\n\n"
+                    "**Valid channels:**\n"
+                    + "\n".join([f"`#{ch}`" for ch in self.LOG_CHANNELS])
+                ),
+                color=0xe74c3c
+            ))
+        channel = discord.utils.get(ctx.guild.text_channels, name=ch_name)
+        if not channel:
+            return await ctx.reply(embed=discord.Embed(
+                title="❌ Channel Not Found",
+                description=f"`#{ch_name}` doesn't exist! Run `!setup` first.",
+                color=0xe74c3c
+            ))
+        await ctx.send(embed=discord.Embed(
+            title=f"⚠️ Clear `#{ch_name}`?",
+            description="This deletes **all messages** in that channel.\n**Reply `yes` to confirm.**",
+            color=0xe74c3c
+        ))
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() == 'yes'
+        try:
+            await self.bot.wait_for('message', check=check, timeout=15)
+        except asyncio.TimeoutError:
+            return await ctx.send(embed=discord.Embed(
+                title="❌ Cancelled", description="Timed out — nothing cleared.",
+                color=0xe74c3c
+            ))
+        await channel.purge(limit=None)
+        await channel.send(embed=discord.Embed(
+            title="🗑️ Logs Cleared",
+            description=f"Cleared by {ctx.author.mention}",
+            color=0x2ecc71,
+            timestamp=datetime.datetime.utcnow()
+        ))
+        await ctx.send(embed=discord.Embed(
+            title="✅ Logs Cleared",
+            description=f"All messages deleted from `#{ch_name}`!",
+            color=0x2ecc71
+        ))
+
+    @app_commands.command(name='clearlogs', description='Clear a log channel (Owner/ExtraOwner only)')
+    @app_commands.describe(channel='Which log channel to clear')
+    @app_commands.choices(channel=[
+        app_commands.Choice(name='🗑️ ALL log channels', value='all'),
+        app_commands.Choice(name='🛡️ mod-logs', value='mod-logs'),
+        app_commands.Choice(name='🔒 security-logs', value='security-logs'),
+        app_commands.Choice(name='🎫 ticket-logs', value='ticket-logs'),
+        app_commands.Choice(name='🎵 music-logs', value='music-logs'),
+        app_commands.Choice(name='💰 economy-logs', value='economy-logs'),
+        app_commands.Choice(name='⭐ leveling-logs', value='leveling-logs'),
+        app_commands.Choice(name='🎁 giveaway-logs', value='giveaway-logs'),
+        app_commands.Choice(name='📋 server-logs', value='server-logs'),
+    ])
+    async def clearlogs_slash(self, interaction: discord.Interaction, channel: str = None):
+        if not self.is_god_tier(interaction.user):
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="❌ No Permission",
+                description="Only **Owner** or **ExtraOwners** can clear logs!",
+                color=0xe74c3c
+            ), ephemeral=True)
+
+        if channel is None:
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="🗑️ Clear Logs",
+                description="Pick a channel from the dropdown!\n\n"
+                    + "\n".join([f"`#{ch}`" for ch in self.LOG_CHANNELS]),
+                color=0x3498db
+            ), ephemeral=True)
+
+        await interaction.response.defer()
+
+        if channel == 'all':
+            cleared, skipped = [], []
+            for ch_name in self.LOG_CHANNELS:
+                ch = discord.utils.get(interaction.guild.text_channels, name=ch_name)
+                if not ch:
+                    skipped.append(ch_name)
+                    continue
+                try:
+                    await ch.purge(limit=None)
+                    cleared.append(ch_name)
+                    await ch.send(embed=discord.Embed(
+                        title="🗑️ Logs Cleared",
+                        description=f"Cleared by {interaction.user.mention}",
+                        color=0x2ecc71,
+                        timestamp=datetime.datetime.utcnow()
+                    ))
+                except:
+                    skipped.append(ch_name)
+            embed = discord.Embed(
+                title="🗑️ All Logs Cleared", color=0x2ecc71,
+                timestamp=datetime.datetime.utcnow())
+            if cleared:
+                embed.add_field(
+                    name=f"✅ Cleared ({len(cleared)})",
+                    value="\n".join([f"`#{ch}`" for ch in cleared]), inline=False)
+            if skipped:
+                embed.add_field(
+                    name=f"⏭️ Skipped ({len(skipped)})",
+                    value="\n".join([f"`#{ch}`" for ch in skipped]), inline=False)
+            return await interaction.followup.send(embed=embed)
+
+        ch = discord.utils.get(interaction.guild.text_channels, name=channel)
+        if not ch:
+            return await interaction.followup.send(embed=discord.Embed(
+                title="❌ Channel Not Found",
+                description=f"`#{channel}` doesn't exist! Run `!setup` first.",
+                color=0xe74c3c
+            ))
+        await ch.purge(limit=None)
+        await ch.send(embed=discord.Embed(
+            title="🗑️ Logs Cleared",
+            description=f"Cleared by {interaction.user.mention}",
+            color=0x2ecc71,
+            timestamp=datetime.datetime.utcnow()
+        ))
+        await interaction.followup.send(embed=discord.Embed(
+            title="✅ Logs Cleared",
+            description=f"All messages deleted from `#{channel}`!",
+            color=0x2ecc71
+        ))
+
+    # ══════════════════════════════════════════
     #   WARN COMMANDS
     # ══════════════════════════════════════════
 
     @commands.command()
     async def warn(self, ctx, member: discord.Member, *, args=""):
-        """Warn a member. Usage: !warn @user ?r reason"""
         reason = args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
         embed, extra = await self._warn(ctx.guild, ctx.author, member, reason)
         await ctx.reply(embed=embed)
@@ -972,7 +1181,8 @@ class Moderation(commands.Cog):
 
     @app_commands.command(name='warn', description='Warn a member')
     @app_commands.describe(member='Member to warn', reason='Reason for warning')
-    async def warn_slash(self, interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+    async def warn_slash(self, interaction: discord.Interaction,
+                         member: discord.Member, reason: str = "No reason provided"):
         embed, extra = await self._warn(interaction.guild, interaction.user, member, reason)
         await interaction.response.send_message(embed=embed)
         if extra:
@@ -980,22 +1190,19 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def warnings(self, ctx, member: discord.Member):
-        """Check warnings. Usage: !warnings @user"""
         if not self.can_do(ctx.author, 'warn'):
             return await ctx.reply(embed=self.perm_error_embed('warn'))
         warns = self.warn_db.get(ctx.guild.id, {}).get(member.id, [])
         if not warns:
             return await ctx.reply(embed=discord.Embed(
-                description=f"✅ {member.mention} has no warnings!",
-                color=0x2ecc71
-            ))
+                description=f"✅ {member.mention} has no warnings!", color=0x2ecc71))
         embed = discord.Embed(title=f"⚠️ Warnings — {member.display_name}", color=0xf39c12)
         for i, w in enumerate(warns, 1):
             embed.add_field(name=f"Warning #{i}", value=w, inline=False)
         embed.set_footer(text=f"Total: {len(warns)} warnings")
         await ctx.send(embed=embed)
 
-    @app_commands.command(name='warnings', description='Check a member\'s warnings')
+    @app_commands.command(name='warnings', description='Check warnings for a member')
     @app_commands.describe(member='Member to check')
     async def warnings_slash(self, interaction: discord.Interaction, member: discord.Member):
         if not self.can_do(interaction.user, 'warn'):
@@ -1012,7 +1219,6 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def unwarn(self, ctx, member: discord.Member, number: int = None):
-        """Remove a warning. Usage: !unwarn @user  or  !unwarn @user 2"""
         if not self.can_do(ctx.author, 'warn'):
             return await ctx.reply(embed=self.perm_error_embed('warn'))
         warns = self.warn_db.get(ctx.guild.id, {}).get(member.id, [])
@@ -1026,8 +1232,7 @@ class Moderation(commands.Cog):
                 return await ctx.reply(embed=discord.Embed(
                     title="❌ Invalid Number",
                     description=f"{member.mention} has {len(warns)} warnings.",
-                    color=0xe74c3c
-                ))
+                    color=0xe74c3c))
             removed = warns.pop(number - 1)
         self.warn_db[ctx.guild.id][member.id] = warns
         embed = discord.Embed(title="✅ Warning Removed", color=0x2ecc71)
@@ -1037,8 +1242,9 @@ class Moderation(commands.Cog):
         await ctx.send(embed=embed)
 
     @app_commands.command(name='unwarn', description='Remove a warning from a member')
-    @app_commands.describe(member='Target member', number='Warning number (leave empty for latest)')
-    async def unwarn_slash(self, interaction: discord.Interaction, member: discord.Member, number: int = None):
+    @app_commands.describe(member='Target member', number='Warning number (empty = latest)')
+    async def unwarn_slash(self, interaction: discord.Interaction,
+                           member: discord.Member, number: int = None):
         if not self.can_do(interaction.user, 'warn'):
             return await interaction.response.send_message(
                 embed=self.perm_error_embed('warn'), ephemeral=True)
@@ -1046,13 +1252,7 @@ class Moderation(commands.Cog):
         if not warns:
             return await interaction.response.send_message(embed=discord.Embed(
                 description=f"✅ {member.mention} has no warnings!", color=0x2ecc71))
-        if number is None:
-            removed = warns.pop()
-        else:
-            if number < 1 or number > len(warns):
-                return await interaction.response.send_message(embed=discord.Embed(
-                    title="❌ Invalid", color=0xe74c3c), ephemeral=True)
-            removed = warns.pop(number - 1)
+        removed = warns.pop() if number is None else warns.pop(number - 1)
         self.warn_db[interaction.guild.id][member.id] = warns
         embed = discord.Embed(title="✅ Warning Removed", color=0x2ecc71)
         embed.add_field(name="Removed", value=removed)
@@ -1061,7 +1261,6 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def clearwarn(self, ctx, member: discord.Member):
-        """Clear all warnings. Usage: !clearwarn @user"""
         if not self.can_do(ctx.author, 'warn'):
             return await ctx.reply(embed=self.perm_error_embed('warn'))
         if ctx.guild.id in self.warn_db and member.id in self.warn_db[ctx.guild.id]:
@@ -1092,13 +1291,6 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def mute(self, ctx, member: discord.Member, *, args=""):
-        """
-        Mute a member.
-        Usage: !mute @user
-               !mute @user ?t 10m
-               !mute @user ?r reason
-               !mute @user ?t 1h ?r reason
-        """
         reason = "No reason provided"
         duration_seconds = 600
         duration_text = "10m (default)"
@@ -1127,16 +1319,12 @@ class Moderation(commands.Cog):
                     description="Use: `30s`, `10m`, `2h`, `1d`",
                     color=0xe74c3c
                 ))
-        embed, extra = await self._mute(
-            ctx.guild, ctx.author, member, duration_text, duration_seconds, reason)
+        embed, _ = await self._mute(ctx.guild, ctx.author, member,
+                                     duration_text, duration_seconds, reason)
         await ctx.reply(embed=embed)
 
     @app_commands.command(name='mute', description='Mute a member')
-    @app_commands.describe(
-        member='Member to mute',
-        duration='Duration e.g. 10m, 1h, 1d (default 10m)',
-        reason='Reason for mute'
-    )
+    @app_commands.describe(member='Member to mute', duration='e.g. 10m, 1h, 1d', reason='Reason')
     async def mute_slash(self, interaction: discord.Interaction,
                          member: discord.Member,
                          duration: str = "10m",
@@ -1144,17 +1332,14 @@ class Moderation(commands.Cog):
         parsed = self.parse_time(duration)
         if not parsed:
             return await interaction.response.send_message(embed=discord.Embed(
-                title="❌ Invalid Time",
-                description="Use: `30s`, `10m`, `2h`, `1d`",
-                color=0xe74c3c
-            ), ephemeral=True)
-        embed, _ = await self._mute(
-            interaction.guild, interaction.user, member, duration, parsed, reason)
+                title="❌ Invalid Time", description="Use: `30s`, `10m`, `2h`, `1d`",
+                color=0xe74c3c), ephemeral=True)
+        embed, _ = await self._mute(interaction.guild, interaction.user,
+                                     member, duration, parsed, reason)
         await interaction.response.send_message(embed=embed)
 
     @commands.command()
     async def unmute(self, ctx, member: discord.Member):
-        """Unmute a member. Usage: !unmute @user"""
         if not self.can_do(ctx.author, 'mute'):
             return await ctx.reply(embed=self.perm_error_embed('mute'))
         await member.timeout(None)
@@ -1165,16 +1350,18 @@ class Moderation(commands.Cog):
         await self.send_log(ctx.guild, self.log_embed("🔊 Unmuted", 0x2ecc71,
             user=f"{member} ({member.id})", moderator=str(ctx.author)))
 
-    @app_commands.command(name='unmute', description='Remove a mute from a member')
+    @app_commands.command(name='unmute', description='Unmute a member')
     @app_commands.describe(member='Member to unmute')
     async def unmute_slash(self, interaction: discord.Interaction, member: discord.Member):
         if not self.can_do(interaction.user, 'mute'):
             return await interaction.response.send_message(
                 embed=self.perm_error_embed('mute'), ephemeral=True)
         await member.timeout(None)
-        embed = discord.Embed(title="🔊 Member Unmuted", color=0x2ecc71)
-        embed.add_field(name="User", value=member.mention)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=discord.Embed(
+            title="🔊 Member Unmuted",
+            description=f"{member.mention} has been unmuted!",
+            color=0x2ecc71
+        ))
 
     # ══════════════════════════════════════════
     #   KICK COMMANDS
@@ -1182,16 +1369,14 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def kick(self, ctx, member: discord.Member, *, args=""):
-        """Kick a member. Usage: !kick @user ?r reason"""
         reason = args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
         embed, _ = await self._kick(ctx.guild, ctx.author, member, reason)
         await ctx.reply(embed=embed)
 
     @app_commands.command(name='kick', description='Kick a member')
-    @app_commands.describe(member='Member to kick', reason='Reason for kick')
+    @app_commands.describe(member='Member to kick', reason='Reason')
     async def kick_slash(self, interaction: discord.Interaction,
-                         member: discord.Member,
-                         reason: str = "No reason provided"):
+                         member: discord.Member, reason: str = "No reason provided"):
         embed, _ = await self._kick(interaction.guild, interaction.user, member, reason)
         await interaction.response.send_message(embed=embed)
 
@@ -1201,22 +1386,19 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def ban(self, ctx, member: discord.Member, *, args=""):
-        """Ban a member. Usage: !ban @user ?r reason"""
         reason = args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
         embed, _ = await self._ban(ctx.guild, ctx.author, member, reason)
         await ctx.reply(embed=embed)
 
     @app_commands.command(name='ban', description='Ban a member')
-    @app_commands.describe(member='Member to ban', reason='Reason for ban')
+    @app_commands.describe(member='Member to ban', reason='Reason')
     async def ban_slash(self, interaction: discord.Interaction,
-                        member: discord.Member,
-                        reason: str = "No reason provided"):
+                        member: discord.Member, reason: str = "No reason provided"):
         embed, _ = await self._ban(interaction.guild, interaction.user, member, reason)
         await interaction.response.send_message(embed=embed)
 
     @commands.command()
     async def unban(self, ctx, *, username):
-        """Unban a user. Usage: !unban username"""
         if not self.can_do(ctx.author, 'ban'):
             return await ctx.reply(embed=self.perm_error_embed('ban'))
         banned = [entry async for entry in ctx.guild.bans()]
@@ -1256,12 +1438,10 @@ class Moderation(commands.Cog):
                 ))
         except asyncio.TimeoutError:
             await ctx.reply(embed=discord.Embed(
-                title="⏰ Timed Out", description="Unban cancelled.",
-                color=0xe74c3c
-            ))
+                title="⏰ Timed Out", description="Unban cancelled.", color=0xe74c3c))
 
     @app_commands.command(name='unban', description='Unban a user')
-    @app_commands.describe(username='Username of banned user')
+    @app_commands.describe(username='Username of the banned user')
     async def unban_slash(self, interaction: discord.Interaction, username: str):
         if not self.can_do(interaction.user, 'ban'):
             return await interaction.response.send_message(
@@ -1271,8 +1451,7 @@ class Moderation(commands.Cog):
         if not matches:
             return await interaction.response.send_message(embed=discord.Embed(
                 title="❌ Not Found", color=0xe74c3c,
-                description=f"No banned user matching `{username}`"
-            ))
+                description=f"No banned user matching `{username}`"))
         await interaction.guild.unban(matches[0].user)
         await interaction.response.send_message(embed=discord.Embed(
             title="✅ Unbanned",
@@ -1282,19 +1461,17 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def tempban(self, ctx, member: discord.Member, time: str, *, args=""):
-        """Tempban. Usage: !tempban @user 1h ?r reason"""
         if not self.can_do(ctx.author, 'tempban'):
-            return await ctx.reply(embed=self.perm_error_embed('tempban', self.get_hierarchy_level(ctx.author)))
+            return await ctx.reply(embed=self.perm_error_embed(
+                'tempban', self.get_hierarchy_level(ctx.author)))
         if self.has_god_bypass(member) and not self.is_god_tier(ctx.author):
             return await ctx.reply(embed=self.bypass_error_embed(member))
         reason = args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
         seconds = self.parse_time(time)
         if not seconds:
             return await ctx.reply(embed=discord.Embed(
-                title="❌ Invalid Time",
-                description="Use: `30s`, `10m`, `2h`, `1d`",
-                color=0xe74c3c
-            ))
+                title="❌ Invalid Time", description="Use: `30s`, `10m`, `2h`, `1d`",
+                color=0xe74c3c))
         await member.ban(reason=f"[Tempban: {time}] {reason}")
         unban_ts = int((datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)).timestamp())
         embed = discord.Embed(title="⏳ Member Tempbanned", color=0xc0392b)
@@ -1316,7 +1493,7 @@ class Moderation(commands.Cog):
             pass
 
     @app_commands.command(name='tempban', description='Temporarily ban a member')
-    @app_commands.describe(member='Member to tempban', duration='Duration e.g. 1h', reason='Reason')
+    @app_commands.describe(member='Member', duration='e.g. 1h, 30m', reason='Reason')
     async def tempban_slash(self, interaction: discord.Interaction,
                             member: discord.Member,
                             duration: str,
@@ -1328,8 +1505,7 @@ class Moderation(commands.Cog):
         if not seconds:
             return await interaction.response.send_message(embed=discord.Embed(
                 title="❌ Invalid Time", color=0xe74c3c,
-                description="Use: `30s`, `10m`, `2h`, `1d`"
-            ), ephemeral=True)
+                description="Use: `30s`, `10m`, `2h`, `1d`"), ephemeral=True)
         await member.ban(reason=f"[Tempban: {duration}] {reason}")
         unban_ts = int((datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)).timestamp())
         embed = discord.Embed(title="⏳ Member Tempbanned", color=0xc0392b)
@@ -1350,7 +1526,6 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def massban(self, ctx, action: str = None, *members: discord.Member):
-        """Massban. Usage: !massban enable/disable/status or !massban @u1 @u2"""
         if not self.is_god_tier(ctx.author):
             return await ctx.reply(embed=discord.Embed(
                 title="❌ Owner/ExtraOwner Only",
@@ -1362,9 +1537,8 @@ class Moderation(commands.Cog):
             self.massban_enabled[guild_id] = True
             return await ctx.send(embed=discord.Embed(
                 title="🔓 Massban ENABLED",
-                description="Use `!massban @u1 @u2 ...` to ban.\nUse `!massban disable` after!",
-                color=0xe74c3c
-            ))
+                description="Use `!massban @u1 @u2 ...`\nUse `!massban disable` after!",
+                color=0xe74c3c))
         if action == "disable":
             self.massban_enabled[guild_id] = False
             return await ctx.reply(embed=discord.Embed(
@@ -1374,42 +1548,32 @@ class Moderation(commands.Cog):
             return await ctx.reply(embed=discord.Embed(
                 title="📊 Massban Status",
                 description=f"**{'🔓 ENABLED' if status else '🔒 DISABLED'}**",
-                color=0xe74c3c if status else 0x2ecc71
-            ))
+                color=0xe74c3c if status else 0x2ecc71))
         if not self.massban_enabled.get(guild_id, False):
             return await ctx.send(embed=discord.Embed(
                 title="🔒 Massban is Disabled",
                 description="Run `!massban enable` first!\n⚠️ Disable after use!",
-                color=0xe74c3c
-            ))
+                color=0xe74c3c))
         if not members and action:
             try:
                 first = await commands.MemberConverter().convert(ctx, action)
                 members = (first,) + members
             except:
                 return await ctx.reply(embed=discord.Embed(
-                    title="❌ Usage",
-                    description="`!massban @u1 @u2 @u3`",
-                    color=0xe74c3c
-                ))
+                    title="❌ Usage", description="`!massban @u1 @u2 @u3`", color=0xe74c3c))
         if not members:
             return await ctx.reply(embed=discord.Embed(
-                title="❌ No Members",
-                description="Mention at least one member!",
-                color=0xe74c3c
-            ))
+                title="❌ No Members", description="Mention at least one member!", color=0xe74c3c))
         await ctx.send(embed=discord.Embed(
             title="⚠️ Confirm Massban",
             description=f"Ban **{len(members)}** members? Reply `yes`.",
-            color=0xe74c3c
-        ))
+            color=0xe74c3c))
         def check(m):
             return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() == 'yes'
         try:
             await self.bot.wait_for('message', check=check, timeout=20)
         except asyncio.TimeoutError:
-            return await ctx.reply(embed=discord.Embed(
-                title="❌ Cancelled", color=0xe74c3c))
+            return await ctx.reply(embed=discord.Embed(title="❌ Cancelled", color=0xe74c3c))
         banned, failed = [], []
         for m in members:
             try:
@@ -1429,69 +1593,53 @@ class Moderation(commands.Cog):
             moderator=str(ctx.author)))
 
     # ══════════════════════════════════════════
-    #   PURGE COMMANDS
+    #   PURGE
     # ══════════════════════════════════════════
 
     @commands.command()
     async def purge(self, ctx, amount: int, member: discord.Member = None):
-        """Delete messages. Usage: !purge 10  or  !purge 10 @user"""
         if not self.can_do(ctx.author, 'purge'):
             return await ctx.reply(embed=self.perm_error_embed('purge'))
         if amount > 100:
             return await ctx.reply(embed=discord.Embed(
-                title="❌ Too Many",
-                description="Max 100 messages at once!",
-                color=0xe74c3c
-            ))
+                title="❌ Too Many", description="Max 100 at once!", color=0xe74c3c))
         if member:
             deleted = await ctx.channel.purge(
-                limit=amount * 5,
-                check=lambda m: m.author == member
-            )
+                limit=amount * 5, check=lambda m: m.author == member)
         else:
             deleted = await ctx.channel.purge(limit=amount + 1)
         msg = await ctx.send(embed=discord.Embed(
-            description=f"🗑️ Deleted **{len(deleted)}** messages!",
-            color=0x2ecc71
-        ))
+            description=f"🗑️ Deleted **{len(deleted)}** messages!", color=0x2ecc71))
         await msg.delete(delay=3)
         await self.send_log(ctx.guild, self.log_embed("🗑️ Purge", 0xe74c3c,
             channel=ctx.channel.mention, deleted=str(len(deleted)),
-            target=str(member) if member else "All",
-            moderator=str(ctx.author)))
+            target=str(member) if member else "All", moderator=str(ctx.author)))
 
-    @app_commands.command(name='purge', description='Delete messages')
+    @app_commands.command(name='purge', description='Delete messages in bulk')
     @app_commands.describe(amount='Number of messages (max 100)', member='Only delete this member\'s messages')
     async def purge_slash(self, interaction: discord.Interaction,
-                          amount: int,
-                          member: discord.Member = None):
+                          amount: int, member: discord.Member = None):
         if not self.can_do(interaction.user, 'purge'):
             return await interaction.response.send_message(
                 embed=self.perm_error_embed('purge'), ephemeral=True)
         if amount > 100:
             return await interaction.response.send_message(embed=discord.Embed(
-                title="❌ Too Many", description="Max 100!", color=0xe74c3c
-            ), ephemeral=True)
+                title="❌ Too Many", description="Max 100!", color=0xe74c3c), ephemeral=True)
         await interaction.response.defer(ephemeral=True)
         if member:
             deleted = await interaction.channel.purge(
-                limit=amount * 5,
-                check=lambda m: m.author == member
-            )
+                limit=amount * 5, check=lambda m: m.author == member)
         else:
             deleted = await interaction.channel.purge(limit=amount)
         await interaction.followup.send(embed=discord.Embed(
-            description=f"🗑️ Deleted **{len(deleted)}** messages!",
-            color=0x2ecc71
-        ), ephemeral=True)
+            description=f"🗑️ Deleted **{len(deleted)}** messages!", color=0x2ecc71), ephemeral=True)
 
     # ══════════════════════════════════════════
-    #   SLOWMODE/LOCK/UNLOCK
+    #   LOCK / UNLOCK / SLOWMODE
     # ══════════════════════════════════════════
 
     @commands.command()
     async def slowmode(self, ctx, time: str = "0"):
-        """Set slowmode. Usage: !slowmode 5m or !slowmode 0"""
         if not self.can_do(ctx.author, 'lock'):
             return await ctx.reply(embed=self.perm_error_embed('lock'))
         if time in ("0", "off"):
@@ -1501,25 +1649,16 @@ class Moderation(commands.Cog):
         seconds = self.parse_time(time)
         if not seconds:
             return await ctx.reply(embed=discord.Embed(
-                title="❌ Invalid Time",
-                description="Use: `30s`, `5m`, `1h`",
-                color=0xe74c3c
-            ))
+                title="❌ Invalid Time", description="Use: `30s`, `5m`, `1h`", color=0xe74c3c))
         if seconds > 21600:
             return await ctx.reply(embed=discord.Embed(
-                title="❌ Too Long",
-                description="Max slowmode is 6 hours!",
-                color=0xe74c3c
-            ))
+                title="❌ Too Long", description="Max slowmode is 6 hours!", color=0xe74c3c))
         await ctx.channel.edit(slowmode_delay=seconds)
         await ctx.reply(embed=discord.Embed(
-            title="✅ Slowmode Set",
-            description=f"Slowmode set to **{time}**!",
-            color=0x2ecc71
-        ))
+            title="✅ Slowmode Set", description=f"Set to **{time}**!", color=0x2ecc71))
 
     @app_commands.command(name='slowmode', description='Set channel slowmode')
-    @app_commands.describe(duration='Duration e.g. 5m, 30s (use 0 to disable)')
+    @app_commands.describe(duration='e.g. 5m, 30s (use 0 to disable)')
     async def slowmode_slash(self, interaction: discord.Interaction, duration: str = "0"):
         if not self.can_do(interaction.user, 'lock'):
             return await interaction.response.send_message(
@@ -1534,23 +1673,17 @@ class Moderation(commands.Cog):
                 title="❌ Invalid Time", color=0xe74c3c), ephemeral=True)
         await interaction.channel.edit(slowmode_delay=seconds)
         await interaction.response.send_message(embed=discord.Embed(
-            title="✅ Slowmode Set",
-            description=f"Set to **{duration}**!",
-            color=0x2ecc71
-        ))
+            title="✅ Slowmode Set", description=f"Set to **{duration}**!", color=0x2ecc71))
 
     @commands.command()
     async def lock(self, ctx, channel: discord.TextChannel = None):
-        """Lock a channel. Usage: !lock or !lock #channel"""
         if not self.can_do(ctx.author, 'lock'):
             return await ctx.reply(embed=self.perm_error_embed('lock'))
         channel = channel or ctx.channel
         await channel.set_permissions(ctx.guild.default_role, send_messages=False)
         await ctx.send(embed=discord.Embed(
             title="🔒 Channel Locked",
-            description=f"**#{channel.name}** is now locked!",
-            color=0xe74c3c
-        ))
+            description=f"**#{channel.name}** is now locked!", color=0xe74c3c))
         await self.send_log(ctx.guild, self.log_embed("🔒 Channel Locked", 0xe74c3c,
             channel=channel.mention, moderator=str(ctx.author)))
 
@@ -1564,23 +1697,17 @@ class Moderation(commands.Cog):
         channel = channel or interaction.channel
         await channel.set_permissions(interaction.guild.default_role, send_messages=False)
         await interaction.response.send_message(embed=discord.Embed(
-            title="🔒 Channel Locked",
-            description=f"**#{channel.name}** locked!",
-            color=0xe74c3c
-        ))
+            title="🔒 Channel Locked", description=f"**#{channel.name}** locked!", color=0xe74c3c))
 
     @commands.command()
     async def unlock(self, ctx, channel: discord.TextChannel = None):
-        """Unlock a channel. Usage: !unlock or !unlock #channel"""
         if not self.can_do(ctx.author, 'lock'):
             return await ctx.reply(embed=self.perm_error_embed('lock'))
         channel = channel or ctx.channel
         await channel.set_permissions(ctx.guild.default_role, send_messages=True)
         await ctx.send(embed=discord.Embed(
             title="🔓 Channel Unlocked",
-            description=f"**#{channel.name}** is now unlocked!",
-            color=0x2ecc71
-        ))
+            description=f"**#{channel.name}** is now unlocked!", color=0x2ecc71))
         await self.send_log(ctx.guild, self.log_embed("🔓 Channel Unlocked", 0x2ecc71,
             channel=channel.mention, moderator=str(ctx.author)))
 
@@ -1595,26 +1722,21 @@ class Moderation(commands.Cog):
         await channel.set_permissions(interaction.guild.default_role, send_messages=True)
         await interaction.response.send_message(embed=discord.Embed(
             title="🔓 Channel Unlocked",
-            description=f"**#{channel.name}** unlocked!",
-            color=0x2ecc71
-        ))
+            description=f"**#{channel.name}** unlocked!", color=0x2ecc71))
 
     # ══════════════════════════════════════════
-    #   NICK COMMANDS
+    #   NICK
     # ══════════════════════════════════════════
 
     @commands.command()
     async def nick(self, ctx, member: discord.Member, *, nickname):
-        """Change nickname. Usage: !nick @user NewName"""
         if not self.can_do(ctx.author, 'nick'):
             return await ctx.reply(embed=self.perm_error_embed('nick'))
         old = member.display_name
         await member.edit(nick=nickname)
         await ctx.reply(embed=discord.Embed(
             title="✅ Nickname Changed",
-            description=f"**{old}** → **{nickname}**",
-            color=0x2ecc71
-        ))
+            description=f"**{old}** → **{nickname}**", color=0x2ecc71))
 
     @app_commands.command(name='nick', description='Change a member\'s nickname')
     @app_commands.describe(member='Target member', nickname='New nickname')
@@ -1627,21 +1749,16 @@ class Moderation(commands.Cog):
         await member.edit(nick=nickname)
         await interaction.response.send_message(embed=discord.Embed(
             title="✅ Nickname Changed",
-            description=f"**{old}** → **{nickname}**",
-            color=0x2ecc71
-        ))
+            description=f"**{old}** → **{nickname}**", color=0x2ecc71))
 
     @commands.command()
     async def resetnick(self, ctx, member: discord.Member):
-        """Reset nickname. Usage: !resetnick @user"""
         if not self.can_do(ctx.author, 'nick'):
             return await ctx.reply(embed=self.perm_error_embed('nick'))
         await member.edit(nick=None)
         await ctx.reply(embed=discord.Embed(
             title="✅ Nickname Reset",
-            description=f"Reset **{member.name}'s** nickname!",
-            color=0x2ecc71
-        ))
+            description=f"Reset **{member.name}'s** nickname!", color=0x2ecc71))
 
     @app_commands.command(name='resetnick', description='Reset a member\'s nickname')
     @app_commands.describe(member='Member to reset')
@@ -1652,21 +1769,14 @@ class Moderation(commands.Cog):
         await member.edit(nick=None)
         await interaction.response.send_message(embed=discord.Embed(
             title="✅ Nickname Reset",
-            description=f"Reset **{member.name}'s** nickname!",
-            color=0x2ecc71
-        ))
+            description=f"Reset **{member.name}'s** nickname!", color=0x2ecc71))
 
     # ══════════════════════════════════════════
-    #   ANNOUNCE/POLL
+    #   ANNOUNCE / POLL
     # ══════════════════════════════════════════
 
     @commands.command()
     async def announce(self, ctx, channel: discord.TextChannel, *, args):
-        """
-        Send announcement.
-        Usage: !announce #channel Message
-               !announce #channel Title | Message
-        """
         if not self.can_do(ctx.author, 'announce'):
             return await ctx.reply(embed=self.perm_error_embed('announce'))
         if "|" in args:
@@ -1676,49 +1786,37 @@ class Moderation(commands.Cog):
             title, content = "📢 Announcement", args.strip()
         embed = discord.Embed(
             title=f"📢 {title}", description=content,
-            color=0x3498db, timestamp=datetime.datetime.utcnow()
-        )
+            color=0x3498db, timestamp=datetime.datetime.utcnow())
         embed.set_footer(text=f"By {ctx.author} • {ctx.guild.name}")
         await channel.send(embed=embed)
         await ctx.reply(embed=discord.Embed(
             title="✅ Announcement Sent",
-            description=f"Sent to {channel.mention}!",
-            color=0x2ecc71
-        ))
+            description=f"Sent to {channel.mention}!", color=0x2ecc71))
 
     @app_commands.command(name='announce', description='Send an announcement')
-    @app_commands.describe(
-        channel='Target channel',
-        title='Announcement title',
-        message='Announcement message'
-    )
+    @app_commands.describe(channel='Target channel', message='Message', title='Title')
     async def announce_slash(self, interaction: discord.Interaction,
                              channel: discord.TextChannel,
-                             message: str,
-                             title: str = "Announcement"):
+                             message: str, title: str = "Announcement"):
         if not self.can_do(interaction.user, 'announce'):
             return await interaction.response.send_message(
                 embed=self.perm_error_embed('announce'), ephemeral=True)
         embed = discord.Embed(
             title=f"📢 {title}", description=message,
-            color=0x3498db, timestamp=datetime.datetime.utcnow()
-        )
+            color=0x3498db, timestamp=datetime.datetime.utcnow())
         embed.set_footer(text=f"By {interaction.user} • {interaction.guild.name}")
         await channel.send(embed=embed)
         await interaction.response.send_message(embed=discord.Embed(
             title="✅ Sent!", description=f"Announcement sent to {channel.mention}!",
-            color=0x2ecc71
-        ), ephemeral=True)
+            color=0x2ecc71), ephemeral=True)
 
     @commands.command()
     async def poll(self, ctx, *, question):
-        """Create a poll. Usage: !poll question"""
         if not self.can_do(ctx.author, 'announce'):
             return await ctx.reply(embed=self.perm_error_embed('announce'))
         embed = discord.Embed(
             title="📊 Poll", description=question,
-            color=0x3498db, timestamp=datetime.datetime.utcnow()
-        )
+            color=0x3498db, timestamp=datetime.datetime.utcnow())
         embed.add_field(name="Vote!", value="✅ Yes  |  ❌ No")
         embed.set_footer(text=f"Poll by {ctx.author}")
         msg = await ctx.send(embed=embed)
@@ -1734,8 +1832,7 @@ class Moderation(commands.Cog):
                 embed=self.perm_error_embed('announce'), ephemeral=True)
         embed = discord.Embed(
             title="📊 Poll", description=question,
-            color=0x3498db, timestamp=datetime.datetime.utcnow()
-        )
+            color=0x3498db, timestamp=datetime.datetime.utcnow())
         embed.add_field(name="Vote!", value="✅ Yes  |  ❌ No")
         embed.set_footer(text=f"Poll by {interaction.user}")
         await interaction.response.send_message(embed=embed)
@@ -1749,7 +1846,6 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def note(self, ctx, member: discord.Member, *, text: str):
-        """Add a mod note. Usage: !note @user text"""
         if not self.can_do(ctx.author, 'warn'):
             return await ctx.reply(embed=self.perm_error_embed('warn'))
         guild_id = ctx.guild.id
@@ -1758,16 +1854,13 @@ class Moderation(commands.Cog):
         if member.id not in self.notes_db[guild_id]:
             self.notes_db[guild_id][member.id] = []
         self.notes_db[guild_id][member.id].append({
-            'note': text,
-            'by': str(ctx.author),
+            'note': text, 'by': str(ctx.author),
             'time': datetime.datetime.utcnow().strftime("%b %d %Y %H:%M")
         })
         count = len(self.notes_db[guild_id][member.id])
         await ctx.reply(embed=discord.Embed(
             title="📝 Note Added",
-            description=f"Note #{count} added for {member.mention}!",
-            color=0x9b59b6
-        ))
+            description=f"Note #{count} added for {member.mention}!", color=0x9b59b6))
         try:
             await ctx.message.delete()
         except:
@@ -1775,7 +1868,6 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def notes(self, ctx, member: discord.Member):
-        """View mod notes. Usage: !notes @user"""
         if not self.can_do(ctx.author, 'warn'):
             return await ctx.reply(embed=self.perm_error_embed('warn'))
         notes = self.notes_db.get(ctx.guild.id, {}).get(member.id, [])
@@ -1787,8 +1879,7 @@ class Moderation(commands.Cog):
         for i, n in enumerate(notes, 1):
             embed.add_field(
                 name=f"Note #{i} • {n['by']} • {n['time']}",
-                value=n['note'], inline=False
-            )
+                value=n['note'], inline=False)
         try:
             await ctx.author.send(embed=embed)
             await ctx.reply(embed=discord.Embed(
@@ -1798,16 +1889,13 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def clearnotes(self, ctx, member: discord.Member):
-        """Clear notes. Usage: !clearnotes @user"""
         if not self.can_do(ctx.author, 'warn'):
             return await ctx.reply(embed=self.perm_error_embed('warn'))
         if ctx.guild.id in self.notes_db and member.id in self.notes_db[ctx.guild.id]:
             self.notes_db[ctx.guild.id][member.id] = []
         await ctx.reply(embed=discord.Embed(
             title="🧹 Notes Cleared",
-            description=f"Cleared all notes for {member.mention}!",
-            color=0x2ecc71
-        ))
+            description=f"Cleared all notes for {member.mention}!", color=0x2ecc71))
 
     # ══════════════════════════════════════════
     #   AFK
@@ -1815,7 +1903,6 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def afk(self, ctx, *, reason="AFK"):
-        """Set AFK. Usage: !afk or !afk reason"""
         self.afk_db[ctx.author.id] = {
             'reason': reason,
             'time': int(datetime.datetime.utcnow().timestamp())
@@ -1827,8 +1914,7 @@ class Moderation(commands.Cog):
         await ctx.send(embed=discord.Embed(
             title="💤 AFK Set",
             description=f"{ctx.author.mention} is now AFK\nReason: **{reason}**",
-            color=0x95a5a6
-        ))
+            color=0x95a5a6))
 
     @app_commands.command(name='afk', description='Set yourself as AFK')
     @app_commands.describe(reason='Reason for AFK')
@@ -1844,30 +1930,23 @@ class Moderation(commands.Cog):
         await interaction.response.send_message(embed=discord.Embed(
             title="💤 AFK Set",
             description=f"{interaction.user.mention} is now AFK\nReason: **{reason}**",
-            color=0x95a5a6
-        ))
+            color=0x95a5a6))
 
     # ══════════════════════════════════════════
-    #   SNIPE
+    #   SNIPE / EDITSNIPE
     # ══════════════════════════════════════════
 
     @commands.command()
     async def snipe(self, ctx):
-        """Show last deleted message. Usage: !snipe"""
         data = self.snipe_db.get(ctx.channel.id)
         if not data:
             return await ctx.reply(embed=discord.Embed(
                 description="❌ Nothing to snipe here!", color=0xe74c3c))
         embed = discord.Embed(
-            title="🕵️ Sniped Message",
-            description=data['content'],
-            color=0x3498db,
-            timestamp=data['time']
-        )
-        embed.set_author(
-            name=str(data['author']),
-            icon_url=data['author'].display_avatar.url
-        )
+            title="🕵️ Sniped Message", description=data['content'],
+            color=0x3498db, timestamp=data['time'])
+        embed.set_author(name=str(data['author']),
+                         icon_url=data['author'].display_avatar.url)
         if data['attachments']:
             embed.add_field(name="Attachments", value="\n".join(data['attachments']))
         embed.set_footer(text=f"Sniped by {ctx.author}")
@@ -1880,30 +1959,22 @@ class Moderation(commands.Cog):
             return await interaction.response.send_message(embed=discord.Embed(
                 description="❌ Nothing to snipe here!", color=0xe74c3c))
         embed = discord.Embed(
-            title="🕵️ Sniped Message",
-            description=data['content'],
-            color=0x3498db,
-            timestamp=data['time']
-        )
-        embed.set_author(
-            name=str(data['author']),
-            icon_url=data['author'].display_avatar.url
-        )
+            title="🕵️ Sniped Message", description=data['content'],
+            color=0x3498db, timestamp=data['time'])
+        embed.set_author(name=str(data['author']),
+                         icon_url=data['author'].display_avatar.url)
         await interaction.response.send_message(embed=embed)
 
     @commands.command()
     async def editsnipe(self, ctx):
-        """Show last edited message. Usage: !editsnipe"""
         data = self.editsnipe_db.get(ctx.channel.id)
         if not data:
             return await ctx.reply(embed=discord.Embed(
                 description="❌ Nothing to editsnipe here!", color=0xe74c3c))
         embed = discord.Embed(
             title="👁️ Edit Sniped", color=0x9b59b6, timestamp=data['time'])
-        embed.set_author(
-            name=str(data['author']),
-            icon_url=data['author'].display_avatar.url
-        )
+        embed.set_author(name=str(data['author']),
+                         icon_url=data['author'].display_avatar.url)
         embed.add_field(name="Before", value=data['before'], inline=False)
         embed.add_field(name="After", value=data['after'], inline=False)
         embed.set_footer(text=f"Sniped by {ctx.author}")
@@ -1926,7 +1997,6 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def find(self, ctx, *, query: str):
-        """Search for a member. Usage: !find name"""
         results = [
             m for m in ctx.guild.members
             if query.lower() in m.name.lower() or
@@ -1935,15 +2005,11 @@ class Moderation(commands.Cog):
         if not results:
             return await ctx.reply(embed=discord.Embed(
                 title="❌ Not Found",
-                description=f"No members matching `{query}`",
-                color=0xe74c3c
-            ))
-        icons = {"online":"🟢","idle":"🟡","dnd":"🔴","offline":"⚫"}
+                description=f"No members matching `{query}`", color=0xe74c3c))
+        icons = {"online": "🟢", "idle": "🟡", "dnd": "🔴", "offline": "⚫"}
         embed = discord.Embed(
             title=f"🔍 Search: `{query}`",
-            description=f"Found **{len(results)}** member(s)",
-            color=0x3498db
-        )
+            description=f"Found **{len(results)}** member(s)", color=0x3498db)
         lines = [f"{icons.get(str(m.status),'⚫')} {m.mention} — `{m.id}`" for m in results]
         embed.add_field(name="Results", value="\n".join(lines), inline=False)
         await ctx.send(embed=embed)
@@ -1959,25 +2025,21 @@ class Moderation(commands.Cog):
         if not results:
             return await interaction.response.send_message(embed=discord.Embed(
                 title="❌ Not Found", color=0xe74c3c))
-        icons = {"online":"🟢","idle":"🟡","dnd":"🔴","offline":"⚫"}
+        icons = {"online": "🟢", "idle": "🟡", "dnd": "🔴", "offline": "⚫"}
         embed = discord.Embed(
             title=f"🔍 Search: `{query}`",
-            description=f"Found **{len(results)}**",
-            color=0x3498db
-        )
+            description=f"Found **{len(results)}**", color=0x3498db)
         lines = [f"{icons.get(str(m.status),'⚫')} {m.mention}" for m in results]
         embed.add_field(name="Results", value="\n".join(lines), inline=False)
         await interaction.response.send_message(embed=embed)
 
     @commands.command(aliases=['ui', 'whois'])
     async def userinfo(self, ctx, member: discord.Member = None):
-        """Get user info. Usage: !userinfo @user"""
         member = member or ctx.author
         roles = [r.mention for r in reversed(member.roles) if r.name != "@everyone"]
         embed = discord.Embed(
             title=f"👤 {member.display_name}",
-            color=member.color if member.color.value else 0x3498db
-        )
+            color=member.color if member.color.value else 0x3498db)
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.add_field(name="Username", value=str(member))
         embed.add_field(name="ID", value=member.id)
@@ -1990,7 +2052,6 @@ class Moderation(commands.Cog):
         embed.add_field(name="Warnings", value=f"⚠️ {warns}")
         embed.add_field(name="Notes", value=f"📝 {notes_count}")
         embed.add_field(name="AFK", value="💤 Yes" if member.id in self.afk_db else "No")
-        # Special status
         if member.id == ctx.guild.owner_id:
             special = "👑 Owner"
         elif member.id in self.extraowners.get(ctx.guild.id, set()):
@@ -2001,20 +2062,22 @@ class Moderation(commands.Cog):
             special = "—"
         embed.add_field(name="Special", value=special)
         lvl = self.get_hierarchy_level(member)
-        lvl_name = {0:"None",1:"warn.exe",2:"mute.exe",3:"kick.exe",4:"ban.exe",999:"God Tier"}.get(lvl,"—")
+        lvl_name = {0:"None",1:"warn.exe",2:"mute.exe",3:"kick.exe",
+                    4:"ban.exe",999:"God Tier"}.get(lvl,"—")
         embed.add_field(name="Mod Level", value=f"`{lvl_name}`")
         if roles:
-            embed.add_field(name=f"Roles ({len(roles)})", value=" ".join(roles[:8]), inline=False)
+            embed.add_field(name=f"Roles ({len(roles)})",
+                           value=" ".join(roles[:8]), inline=False)
         await ctx.send(embed=embed)
 
     @app_commands.command(name='userinfo', description='Get info about a member')
     @app_commands.describe(member='Member to check (default: yourself)')
-    async def userinfo_slash(self, interaction: discord.Interaction, member: discord.Member = None):
+    async def userinfo_slash(self, interaction: discord.Interaction,
+                             member: discord.Member = None):
         member = member or interaction.user
         embed = discord.Embed(
             title=f"👤 {member.display_name}",
-            color=member.color if member.color.value else 0x3498db
-        )
+            color=member.color if member.color.value else 0x3498db)
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.add_field(name="Username", value=str(member))
         embed.add_field(name="ID", value=member.id)
@@ -2025,7 +2088,6 @@ class Moderation(commands.Cog):
 
     @commands.command(aliases=['si', 'server'])
     async def serverinfo(self, ctx):
-        """Get server info. Usage: !serverinfo"""
         g = ctx.guild
         bots = sum(1 for m in g.members if m.bot)
         humans = g.member_count - bots
@@ -2034,18 +2096,14 @@ class Moderation(commands.Cog):
             embed.set_thumbnail(url=g.icon.url)
         embed.add_field(name="Owner", value=g.owner.mention)
         embed.add_field(name="Members", value=f"👤 {humans} humans\n🤖 {bots} bots")
-        embed.add_field(
-            name="Channels",
-            value=f"💬 {len(g.text_channels)} text\n🔊 {len(g.voice_channels)} voice"
-        )
+        embed.add_field(name="Channels",
+                        value=f"💬 {len(g.text_channels)} text\n🔊 {len(g.voice_channels)} voice")
         embed.add_field(name="Roles", value=len(g.roles))
         embed.add_field(name="Created", value=g.created_at.strftime("%b %d, %Y"))
-        embed.add_field(
-            name="Boosts",
-            value=f"Level {g.premium_tier} ({g.premium_subscription_count} boosts)"
-        )
-        eos = len(self.extraowners.get(g.id, set()))
-        embed.add_field(name="ExtraOwners", value=str(eos))
+        embed.add_field(name="Boosts",
+                        value=f"Level {g.premium_tier} ({g.premium_subscription_count} boosts)")
+        embed.add_field(name="ExtraOwners",
+                        value=str(len(self.extraowners.get(g.id, set()))))
         embed.set_footer(text=f"ID: {g.id}")
         await ctx.send(embed=embed)
 
