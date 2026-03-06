@@ -231,6 +231,15 @@ class Moderation(commands.Cog):
         embed.set_footer(text="Lucky Bot Mod Logs")
         return embed
 
+    async def _schedule_tempban_unban(self, guild, user, seconds):
+        await asyncio.sleep(seconds)
+        try:
+            await guild.unban(user, reason="Tempban expired")
+            await self.send_log(guild, self.log_embed(
+                "✅ Tempban Expired", 0x2ecc71, user=str(user)))
+        except Exception:
+            pass
+
     # ══════════════════════════════════════════
     #   SHARED LOGIC
     # ══════════════════════════════════════════
@@ -324,12 +333,9 @@ class Moderation(commands.Cog):
                     inline=False
                 )
             return embed, None
-        if self.has_god_bypass(member) and not self.is_god_tier(author):
-            return self.bypass_error_embed(member), None
-        if member.id == guild.owner_id:
-            return self.protected_error_embed(member), None
-        if member.id in self.extraowners.get(guild.id, set()):
-            return self.protected_error_embed(member), None
+        blocked = self._mod_target_block_embed(guild, author, member, action_word="kick")
+        if blocked:
+            return blocked, None
         await member.kick(reason=reason)
         embed = discord.Embed(title="👢 Member Kicked", color=0xe74c3c)
         embed.add_field(name="User", value=member.mention)
@@ -360,12 +366,9 @@ class Moderation(commands.Cog):
                     inline=False
                 )
             return embed, None
-        if self.has_god_bypass(member) and not self.is_god_tier(author):
-            return self.bypass_error_embed(member), None
-        if member.id == guild.owner_id:
-            return self.protected_error_embed(member), None
-        if member.id in self.extraowners.get(guild.id, set()):
-            return self.protected_error_embed(member), None
+        blocked = self._mod_target_block_embed(guild, author, member, action_word="ban")
+        if blocked:
+            return blocked, None
         await member.ban(reason=reason)
         embed = discord.Embed(title="🔨 Member Banned", color=0xc0392b)
         embed.add_field(name="User", value=member.mention)
@@ -1281,7 +1284,7 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def warn(self, ctx, member: discord.Member, *, args=""):
-        reason = args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
+        reason = self._extract_reason(args)
         embed, extra = await self._warn(ctx.guild, ctx.author, member, reason)
         await ctx.reply(embed=embed)
         if extra:
@@ -1455,7 +1458,7 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def kick(self, ctx, member: discord.Member, *, args=""):
-        reason = args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
+        reason = self._extract_reason(args)
         embed, _ = await self._kick(ctx.guild, ctx.author, member, reason)
         await ctx.reply(embed=embed)
 
@@ -1472,7 +1475,7 @@ class Moderation(commands.Cog):
 
     @commands.command()
     async def ban(self, ctx, member: discord.Member, *, args=""):
-        reason = args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
+        reason = self._extract_reason(args)
         embed, _ = await self._ban(ctx.guild, ctx.author, member, reason)
         await ctx.reply(embed=embed)
 
@@ -1537,27 +1540,45 @@ class Moderation(commands.Cog):
         if not matches:
             return await interaction.response.send_message(embed=discord.Embed(
                 title="❌ Not Found", color=0xe74c3c,
-                description=f"No banned user matching `{username}`"))
+                description=f"No banned user matching `{username}`"), ephemeral=True)
+
+        if len(matches) > 1:
+            choices = "\n".join([f"• `{e.user}`" for e in matches[:10]])
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="⚠️ Multiple Matches",
+                description=(
+                    f"More than one banned user matched `{username}`.\n"
+                    f"Use a more specific name/tag and retry.\n\n{choices}"
+                ),
+                color=0xe67e22,
+            ), ephemeral=True)
+
         await interaction.guild.unban(matches[0].user)
         await interaction.response.send_message(embed=discord.Embed(
             title="✅ Unbanned",
             description=f"Unbanned **{matches[0].user}**!",
             color=0x2ecc71
         ))
+        await self.send_log(interaction.guild, self.log_embed(
+            "✅ Unbanned", 0x2ecc71, user=str(matches[0].user), moderator=str(interaction.user)))
 
     @commands.command()
     async def tempban(self, ctx, member: discord.Member, time: str, *, args=""):
         if not self.can_do(ctx.author, 'tempban'):
             return await ctx.reply(embed=self.perm_error_embed(
                 'tempban', self.get_hierarchy_level(ctx.author)))
-        if self.has_god_bypass(member) and not self.is_god_tier(ctx.author):
-            return await ctx.reply(embed=self.bypass_error_embed(member))
-        reason = args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
+        blocked = self._mod_target_block_embed(ctx.guild, ctx.author, member, action_word="tempban")
+        if blocked:
+            return await ctx.reply(embed=blocked)
+        reason = self._extract_reason(args)
         seconds = self.parse_time(time)
         if not seconds:
             return await ctx.reply(embed=discord.Embed(
                 title="❌ Invalid Time", description="Use: `30s`, `10m`, `2h`, `1d`",
                 color=0xe74c3c))
+        if seconds > 86400 * 28:
+            return await ctx.reply(embed=discord.Embed(
+                title="❌ Too Long", description="Max tempban is 28 days.", color=0xe74c3c))
         await member.ban(reason=f"[Tempban: {time}] {reason}")
         unban_ts = int((datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)).timestamp())
         embed = discord.Embed(title="⏳ Member Tempbanned", color=0xc0392b)
@@ -1570,13 +1591,7 @@ class Moderation(commands.Cog):
         await self.send_log(ctx.guild, self.log_embed("⏳ Tempban", 0xc0392b,
             user=f"{member} ({member.id})", duration=time,
             reason=reason, moderator=str(ctx.author)))
-        await asyncio.sleep(seconds)
-        try:
-            await ctx.guild.unban(member, reason="Tempban expired")
-            await self.send_log(ctx.guild, self.log_embed(
-                "✅ Tempban Expired", 0x2ecc71, user=str(member)))
-        except:
-            pass
+        self.bot.loop.create_task(self._schedule_tempban_unban(ctx.guild, member, seconds))
 
     @app_commands.command(name='tempban', description='Temporarily ban a member')
     @app_commands.describe(member='Member', duration='e.g. 1h, 30m', reason='Reason')
@@ -1587,11 +1602,17 @@ class Moderation(commands.Cog):
         if not self.can_do(interaction.user, 'tempban'):
             return await interaction.response.send_message(
                 embed=self.perm_error_embed('tempban'), ephemeral=True)
+        blocked = self._mod_target_block_embed(interaction.guild, interaction.user, member, action_word="tempban")
+        if blocked:
+            return await interaction.response.send_message(embed=blocked, ephemeral=True)
         seconds = self.parse_time(duration)
         if not seconds:
             return await interaction.response.send_message(embed=discord.Embed(
                 title="❌ Invalid Time", color=0xe74c3c,
                 description="Use: `30s`, `10m`, `2h`, `1d`"), ephemeral=True)
+        if seconds > 86400 * 28:
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="❌ Too Long", description="Max tempban is 28 days.", color=0xe74c3c), ephemeral=True)
         await member.ban(reason=f"[Tempban: {duration}] {reason}")
         unban_ts = int((datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)).timestamp())
         embed = discord.Embed(title="⏳ Member Tempbanned", color=0xc0392b)
@@ -1600,11 +1621,10 @@ class Moderation(commands.Cog):
         embed.add_field(name="Reason", value=reason)
         embed.add_field(name="Unban at", value=f"<t:{unban_ts}:R>")
         await interaction.response.send_message(embed=embed)
-        await asyncio.sleep(seconds)
-        try:
-            await interaction.guild.unban(member, reason="Tempban expired")
-        except:
-            pass
+        await self.send_log(interaction.guild, self.log_embed("⏳ Tempban", 0xc0392b,
+            user=f"{member} ({member.id})", duration=duration,
+            reason=reason, moderator=str(interaction.user)))
+        self.bot.loop.create_task(self._schedule_tempban_unban(interaction.guild, member, seconds))
 
     # ══════════════════════════════════════════
     #   MASSBAN
