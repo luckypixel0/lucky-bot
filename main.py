@@ -9,35 +9,6 @@ from discord.ext import commands
 from keep_alive import keep_alive
 
 DEFAULT_PREFIX = "!"
-PHASE_ONE_COGS: List[str] = [
-    "cogs.prefix",
-    "cogs.help",
-    "cogs.bot_status",
-    "cogs.moderation",
-    "cogs.security",
-]
-
-
-def build_prefix_callable(default_prefix: str = DEFAULT_PREFIX):
-    async def _get_prefix(bot: commands.Bot, message: discord.Message):
-        base = commands.when_mentioned(bot, message)
-        guild_id = message.guild.id if message.guild else None
-        custom = bot.custom_prefixes.get(guild_id, default_prefix)
-
-        # Allow approved users to run commands without typing a prefix.
-        if message.author.id in bot.no_prefix_users:
-            return base + ["", custom]
-
-        return base + [custom]
-
-    return _get_prefix
-
-
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-intents.guilds = True
-
 
 
 def discover_cogs() -> List[str]:
@@ -101,12 +72,6 @@ async def on_ready():
     print(f"🏠 Guilds: {len(bot.guilds)}")
     print(f"🧩 Loaded Cogs: {', '.join(bot.cogs.keys()) or 'None'}")
 
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} slash command(s)")
-    except Exception as exc:
-        print(f"❌ Slash sync failed: {exc}")
-
     # Guild sync makes slash commands show up quickly in joined servers.
     guild_sync_ok = 0
     for guild in bot.guilds:
@@ -169,7 +134,6 @@ async def main():
     keep_alive()
 
     async with bot:
-        for ext in PHASE_ONE_COGS:
         for ext in COGS_TO_LOAD:
             try:
                 await bot.load_extension(ext)
