@@ -1,5 +1,6 @@
 import asyncio
 import os
+from pathlib import Path
 from typing import List
 
 import discord
@@ -8,11 +9,21 @@ from discord.ext import commands
 from keep_alive import keep_alive
 
 DEFAULT_PREFIX = "!"
-PHASE_ONE_COGS: List[str] = [
-    "cogs.prefix",
-    "cogs.help",
-    "cogs.bot_status",
-]
+
+
+def discover_cogs() -> List[str]:
+    cog_dir = Path(__file__).parent / "cogs"
+    discovered = []
+    for path in sorted(cog_dir.glob("*.py")):
+        if path.stem.startswith("_"):
+            continue
+        if path.stem == "__init__":
+            continue
+        discovered.append(f"cogs.{path.stem}")
+    return discovered
+
+
+COGS_TO_LOAD: List[str] = discover_cogs()
 
 
 def build_prefix_callable(default_prefix: str = DEFAULT_PREFIX):
@@ -109,7 +120,7 @@ async def main():
     keep_alive()
 
     async with bot:
-        for ext in PHASE_ONE_COGS:
+        for ext in COGS_TO_LOAD:
             try:
                 await bot.load_extension(ext)
                 print(f"✅ Loaded extension: {ext}")
