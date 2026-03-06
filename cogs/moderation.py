@@ -165,6 +165,15 @@ class Moderation(commands.Cog):
     async def _warn(self, guild, author, member, reason):
         if not self.can_do(author, 'warn'):
             return self.perm_error_embed('warn', self.get_hierarchy_level(author)), None
+        if member.id == author.id:
+            return discord.Embed(
+                title="❌ Invalid Target",
+                description="You cannot warn yourself.",
+                color=0xe74c3c,
+            ), None
+        blocked_embed = self._warning_target_block_embed(member)
+        if blocked_embed:
+            return blocked_embed, None
         if self.has_god_bypass(member) and not self.is_god_tier(author):
             return self.bypass_error_embed(member), None
         guild_id = guild.id
@@ -1167,6 +1176,32 @@ class Moderation(commands.Cog):
             color=0x2ecc71
         ))
 
+    def _get_warns(self, guild_id, member_id):
+        return self.warn_db.get(guild_id, {}).get(member_id, [])
+
+    def _set_warns(self, guild_id, member_id, warns):
+        self.warn_db.setdefault(guild_id, {})[member_id] = warns
+
+    def _warning_target_block_embed(self, member):
+        if member.bot:
+            return discord.Embed(
+                title="❌ Invalid Target",
+                description="You cannot warn a bot account.",
+                color=0xe74c3c,
+            )
+        if member.id == member.guild.owner_id:
+            return self.protected_error_embed(member)
+        if member.id in self.extraowners.get(member.guild.id, set()):
+            return self.protected_error_embed(member)
+        return None
+
+    def _warnings_embed(self, member, warns):
+        embed = discord.Embed(title=f"⚠️ Warnings — {member.display_name}", color=0xf39c12)
+        for i, w in enumerate(warns, 1):
+            embed.add_field(name=f"Warning #{i}", value=w, inline=False)
+        embed.set_footer(text=f"Total: {len(warns)} warning(s)")
+        return embed
+
     # ══════════════════════════════════════════
     #   WARN COMMANDS
     # ══════════════════════════════════════════
@@ -1192,15 +1227,11 @@ class Moderation(commands.Cog):
     async def warnings(self, ctx, member: discord.Member):
         if not self.can_do(ctx.author, 'warn'):
             return await ctx.reply(embed=self.perm_error_embed('warn'))
-        warns = self.warn_db.get(ctx.guild.id, {}).get(member.id, [])
+        warns = self._get_warns(ctx.guild.id, member.id)
         if not warns:
             return await ctx.reply(embed=discord.Embed(
                 description=f"✅ {member.mention} has no warnings!", color=0x2ecc71))
-        embed = discord.Embed(title=f"⚠️ Warnings — {member.display_name}", color=0xf39c12)
-        for i, w in enumerate(warns, 1):
-            embed.add_field(name=f"Warning #{i}", value=w, inline=False)
-        embed.set_footer(text=f"Total: {len(warns)} warnings")
-        await ctx.send(embed=embed)
+        await ctx.send(embed=self._warnings_embed(member, warns))
 
     @app_commands.command(name='warnings', description='Check warnings for a member')
     @app_commands.describe(member='Member to check')
@@ -1208,20 +1239,17 @@ class Moderation(commands.Cog):
         if not self.can_do(interaction.user, 'warn'):
             return await interaction.response.send_message(
                 embed=self.perm_error_embed('warn'), ephemeral=True)
-        warns = self.warn_db.get(interaction.guild.id, {}).get(member.id, [])
+        warns = self._get_warns(interaction.guild.id, member.id)
         if not warns:
             return await interaction.response.send_message(embed=discord.Embed(
                 description=f"✅ {member.mention} has no warnings!", color=0x2ecc71))
-        embed = discord.Embed(title=f"⚠️ Warnings — {member.display_name}", color=0xf39c12)
-        for i, w in enumerate(warns, 1):
-            embed.add_field(name=f"Warning #{i}", value=w, inline=False)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=self._warnings_embed(member, warns))
 
     @commands.command()
     async def unwarn(self, ctx, member: discord.Member, number: int = None):
         if not self.can_do(ctx.author, 'warn'):
             return await ctx.reply(embed=self.perm_error_embed('warn'))
-        warns = self.warn_db.get(ctx.guild.id, {}).get(member.id, [])
+        warns = self._get_warns(ctx.guild.id, member.id)
         if not warns:
             return await ctx.reply(embed=discord.Embed(
                 description=f"✅ {member.mention} has no warnings!", color=0x2ecc71))
@@ -1231,10 +1259,10 @@ class Moderation(commands.Cog):
             if number < 1 or number > len(warns):
                 return await ctx.reply(embed=discord.Embed(
                     title="❌ Invalid Number",
-                    description=f"{member.mention} has {len(warns)} warnings.",
+                    description=f"{member.mention} has {len(warns)} warnings. Use 1 to {len(warns)}.",
                     color=0xe74c3c))
             removed = warns.pop(number - 1)
-        self.warn_db[ctx.guild.id][member.id] = warns
+        self._set_warns(ctx.guild.id, member.id, warns)
         embed = discord.Embed(title="✅ Warning Removed", color=0x2ecc71)
         embed.add_field(name="User", value=member.mention)
         embed.add_field(name="Removed", value=removed)
@@ -1248,13 +1276,24 @@ class Moderation(commands.Cog):
         if not self.can_do(interaction.user, 'warn'):
             return await interaction.response.send_message(
                 embed=self.perm_error_embed('warn'), ephemeral=True)
-        warns = self.warn_db.get(interaction.guild.id, {}).get(member.id, [])
+        warns = self._get_warns(interaction.guild.id, member.id)
         if not warns:
             return await interaction.response.send_message(embed=discord.Embed(
                 description=f"✅ {member.mention} has no warnings!", color=0x2ecc71))
-        removed = warns.pop() if number is None else warns.pop(number - 1)
-        self.warn_db[interaction.guild.id][member.id] = warns
+
+        if number is None:
+            removed = warns.pop()
+        else:
+            if number < 1 or number > len(warns):
+                return await interaction.response.send_message(embed=discord.Embed(
+                    title="❌ Invalid Number",
+                    description=f"{member.mention} has {len(warns)} warnings. Use 1 to {len(warns)}.",
+                    color=0xe74c3c), ephemeral=True)
+            removed = warns.pop(number - 1)
+
+        self._set_warns(interaction.guild.id, member.id, warns)
         embed = discord.Embed(title="✅ Warning Removed", color=0x2ecc71)
+        embed.add_field(name="User", value=member.mention)
         embed.add_field(name="Removed", value=removed)
         embed.add_field(name="Remaining", value=str(len(warns)))
         await interaction.response.send_message(embed=embed)
@@ -1263,8 +1302,11 @@ class Moderation(commands.Cog):
     async def clearwarn(self, ctx, member: discord.Member):
         if not self.can_do(ctx.author, 'warn'):
             return await ctx.reply(embed=self.perm_error_embed('warn'))
-        if ctx.guild.id in self.warn_db and member.id in self.warn_db[ctx.guild.id]:
-            self.warn_db[ctx.guild.id][member.id] = []
+        warns = self._get_warns(ctx.guild.id, member.id)
+        if not warns:
+            return await ctx.reply(embed=discord.Embed(
+                description=f"✅ {member.mention} has no warnings to clear!", color=0x2ecc71))
+        self._set_warns(ctx.guild.id, member.id, [])
         await ctx.reply(embed=discord.Embed(
             title="🧹 Warnings Cleared",
             description=f"Cleared all warnings for {member.mention}!",
@@ -1277,8 +1319,12 @@ class Moderation(commands.Cog):
         if not self.can_do(interaction.user, 'warn'):
             return await interaction.response.send_message(
                 embed=self.perm_error_embed('warn'), ephemeral=True)
-        if interaction.guild.id in self.warn_db and member.id in self.warn_db[interaction.guild.id]:
-            self.warn_db[interaction.guild.id][member.id] = []
+        warns = self._get_warns(interaction.guild.id, member.id)
+        if not warns:
+            return await interaction.response.send_message(embed=discord.Embed(
+                description=f"✅ {member.mention} has no warnings to clear!", color=0x2ecc71),
+                ephemeral=True)
+        self._set_warns(interaction.guild.id, member.id, [])
         await interaction.response.send_message(embed=discord.Embed(
             title="🧹 Warnings Cleared",
             description=f"Cleared all warnings for {member.mention}!",
