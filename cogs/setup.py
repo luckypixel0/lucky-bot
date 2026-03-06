@@ -234,10 +234,13 @@ class Setup(commands.Cog):
         emoji, topic = LOG_CHANNELS['security-logs']
         results.append(await self._create_log_channel(guild, 'security-logs', emoji, topic, cat))
         return results, (
-            '1. Enable antinuke: `!antinuke on`\n'
-            '2. Enable antiraid: `!antiraid on`\n'
-            '3. Enable antispam: `!antispam on`\n'
-            '4. Whitelist trusted users: `!antinuke whitelist @user`'
+            '1. Run `!antinuke wizard` — guided 4-step setup\n'
+            '   OR `!antinuke setup` — quick-enable with safe defaults\n'
+            '2. Run `!antiraid on` — enable raid detection\n'
+            '3. Run `!antiraid minage 7` — block accounts under 7 days old\n'
+            '4. Run `!antinuke whitelist @user` — whitelist trusted staff\n'
+            '5. Run `!antinuke punish ban` — set punishment (ban/kick/mute/strip/derank)\n'
+            '6. See all options: `!help` → 🔐 Security'
         )
 
     async def _run_tickets(self, guild):
@@ -316,8 +319,9 @@ class Setup(commands.Cog):
             '1. Give `role.giver.god` to admins\n'
             '2. Give `ban.exe` to moderators\n'
             '3. Run `!extraowner add @user` for trusted people\n'
-            '4. Enable security: `!antinuke on` · `!antiraid on`\n'
-            '5. Use `!channelbind list` to see / change channel assignments'
+            '4. Run `!antinuke wizard` — set up server protection\n'
+            '5. Run `!antiraid on` + `!antiraid minage 7` — raid protection\n'
+            '6. Use `!channelbind list` to see / change channel assignments'
         )
 
     # ══════════════════════════════════════════
@@ -339,7 +343,8 @@ class Setup(commands.Cog):
             value=(
                 '`!setup basic` — permission roles only\n'
                 '`!setup moderation` — mod roles + `#mod-logs`\n'
-                '`!setup security` — `#security-logs` + security guide'
+                '`!setup security` — `#security-logs` + next steps\n'
+                '↳ After security setup: run `!antinuke wizard` to configure'
             ),
             inline=False
         )
