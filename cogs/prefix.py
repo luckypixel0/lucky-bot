@@ -1,292 +1,136 @@
 import discord
-from discord.ext import commands
 from discord import app_commands
-import datetime
+from discord.ext import commands
+
 
 class Prefix(commands.Cog):
-    def __init__(self, bot):
+    """Prefix + no-prefix management."""
+
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    def get_prefix(self, guild_id):
-        return self.bot.custom_prefixes.get(guild_id, '!')
-
-    def is_bot_owner(self, user_id):
+    def _is_bot_owner(self, user_id: int) -> bool:
         return user_id == self.bot.BOT_OWNER_ID
 
-    # ══════════════════════════════════════════
-    #   SET PREFIX
-    # ══════════════════════════════════════════
+    def _is_server_owner(self, guild: discord.Guild, user_id: int) -> bool:
+        return guild and guild.owner_id == user_id
 
-    @commands.command(name='setprefix')
-    async def setprefix_prefix(self, ctx, new_prefix: str):
-        """
-        Change the bot prefix for this server.
-        Usage: !setprefix &
-        Server owner only.
-        """
-        if ctx.author.id != ctx.guild.owner_id and not self.is_bot_owner(ctx.author.id):
-            return await ctx.reply(embed=discord.Embed(
-                title="❌ No Permission",
-                description="Only the **server owner** can change the prefix!",
-                color=0xe74c3c
-            ))
+    def _current_prefix(self, guild: discord.Guild | None) -> str:
+        if guild is None:
+            return self.bot.DEFAULT_PREFIX
+        return self.bot.custom_prefixes.get(guild.id, self.bot.DEFAULT_PREFIX)
+
+    async def _set_prefix_logic(self, guild: discord.Guild, actor_id: int, new_prefix: str):
+        if not (self._is_server_owner(guild, actor_id) or self._is_bot_owner(actor_id)):
+            return False, "Only the **server owner** (or bot owner) can change prefix."
+
+        if new_prefix.lower() == "reset":
+            self.bot.custom_prefixes.pop(guild.id, None)
+            return True, f"Prefix reset to default: `{self.bot.DEFAULT_PREFIX}`"
+
         if len(new_prefix) > 5:
-            return await ctx.reply(embed=discord.Embed(
-                title="❌ Too Long",
-                description="Prefix must be **5 characters or less**!",
-                color=0xe74c3c
-            ))
-        if new_prefix.lower() == 'reset':
-            self.bot.custom_prefixes.pop(ctx.guild.id, None)
-            return await ctx.reply(embed=discord.Embed(
-                title="✅ Prefix Reset",
-                description="Prefix reset back to default: `!`",
-                color=0x2ecc71
-            ))
-        self.bot.custom_prefixes[ctx.guild.id] = new_prefix
-        embed = discord.Embed(
-            title="✅ Prefix Updated",
-            color=0x2ecc71,
-            timestamp=datetime.datetime.utcnow()
-        )
-        embed.add_field(name="New Prefix", value=f"`{new_prefix}`")
-        embed.add_field(name="Example", value=f"`{new_prefix}ping`")
-        embed.add_field(
-            name="💡 Tip",
-            value="If you forget your prefix, use `/prefix` to check it!",
-            inline=False
-        )
-        embed.set_footer(text="Lucky Bot Prefix System")
-        await ctx.reply(embed=embed)
+            return False, "Prefix must be at most **5 characters**."
 
-    @app_commands.command(name='setprefix', description='Change the bot prefix for this server')
-    @app_commands.describe(new_prefix='New prefix (max 5 characters, type "reset" to reset to !)')
+        self.bot.custom_prefixes[guild.id] = new_prefix
+        return True, f"Prefix updated to: `{new_prefix}`"
+
+    @commands.command(name="setprefix")
+    @commands.guild_only()
+    async def setprefix_prefix(self, ctx: commands.Context, *, new_prefix: str):
+        """Set custom prefix. Example: !setprefix ?"""
+        ok, message = await self._set_prefix_logic(ctx.guild, ctx.author.id, new_prefix.strip())
+        color = discord.Color.green() if ok else discord.Color.red()
+        await ctx.reply(embed=discord.Embed(title="Prefix Settings", description=message, color=color))
+
+    @app_commands.command(name="setprefix", description="Set this server prefix (owner or bot owner only)")
+    @app_commands.describe(new_prefix="Example: ?, $, !! or reset")
     async def setprefix_slash(self, interaction: discord.Interaction, new_prefix: str):
-        if interaction.user.id != interaction.guild.owner_id and \
-           not self.is_bot_owner(interaction.user.id):
-            return await interaction.response.send_message(embed=discord.Embed(
-                title="❌ No Permission",
-                description="Only the **server owner** can change the prefix!",
-                color=0xe74c3c
-            ), ephemeral=True)
-        if len(new_prefix) > 5:
-            return await interaction.response.send_message(embed=discord.Embed(
-                title="❌ Too Long",
-                description="Prefix must be **5 characters or less**!",
-                color=0xe74c3c
-            ), ephemeral=True)
-        if new_prefix.lower() == 'reset':
-            self.bot.custom_prefixes.pop(interaction.guild.id, None)
-            return await interaction.response.send_message(embed=discord.Embed(
-                title="✅ Prefix Reset",
-                description="Prefix reset back to default: `!`",
-                color=0x2ecc71
-            ))
-        self.bot.custom_prefixes[interaction.guild.id] = new_prefix
-        embed = discord.Embed(
-            title="✅ Prefix Updated",
-            color=0x2ecc71,
-            timestamp=datetime.datetime.utcnow()
-        )
-        embed.add_field(name="New Prefix", value=f"`{new_prefix}`")
-        embed.add_field(name="Example", value=f"`{new_prefix}ping`")
-        embed.set_footer(text="Lucky Bot Prefix System")
-        await interaction.response.send_message(embed=embed)
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="❌ Server Only",
+                    description="Use this inside a server.",
+                    color=discord.Color.red(),
+                ),
+                ephemeral=True,
+            )
+            return
 
-    # ══════════════════════════════════════════
-    #   CHECK PREFIX
-    # ══════════════════════════════════════════
+        ok, message = await self._set_prefix_logic(interaction.guild, interaction.user.id, new_prefix.strip())
+        color = discord.Color.green() if ok else discord.Color.red()
+        await interaction.response.send_message(
+            embed=discord.Embed(title="Prefix Settings", description=message, color=color),
+            ephemeral=not ok,
+        )
 
-    @commands.command(name='prefix')
-    async def prefix_cmd(self, ctx):
-        """Show current prefix. Usage: !prefix"""
-        current = self.get_prefix(ctx.guild.id if ctx.guild else None)
+    @commands.command(name="prefix")
+    async def prefix_prefix(self, ctx: commands.Context):
+        prefix = self._current_prefix(ctx.guild)
         embed = discord.Embed(
-            title="⚙️ Server Prefix",
-            color=0x3498db,
-            timestamp=datetime.datetime.utcnow()
+            title="Current Prefix",
+            description=f"This server prefix is `{prefix}`\nDefault prefix is `{self.bot.DEFAULT_PREFIX}`.",
+            color=discord.Color.blurple(),
         )
-        embed.add_field(name="Current Prefix", value=f"`{current}`")
-        embed.add_field(name="Example", value=f"`{current}help`")
-        embed.add_field(
-            name="Change it",
-            value=f"`{current}setprefix <new>` — server owner only\n`{current}setprefix reset` — reset to `!`",
-            inline=False
-        )
-        embed.add_field(
-            name="💡 Always works",
-            value="Slash commands like `/help` always work regardless of prefix!",
-            inline=False
-        )
-        embed.set_footer(text="Lucky Bot Prefix System")
         await ctx.reply(embed=embed)
 
-    @app_commands.command(name='prefix', description='Show the current bot prefix for this server')
+    @app_commands.command(name="prefix", description="Show this server's current prefix")
     async def prefix_slash(self, interaction: discord.Interaction):
-        current = self.get_prefix(interaction.guild.id if interaction.guild else None)
-        embed = discord.Embed(
-            title="⚙️ Server Prefix",
-            color=0x3498db,
-            timestamp=datetime.datetime.utcnow()
+        prefix = self._current_prefix(interaction.guild)
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="Current Prefix",
+                description=f"This server prefix is `{prefix}`\nDefault prefix is `{self.bot.DEFAULT_PREFIX}`.",
+                color=discord.Color.blurple(),
+            )
         )
-        embed.add_field(name="Current Prefix", value=f"`{current}`")
-        embed.add_field(name="Example", value=f"`{current}help`")
-        embed.add_field(
-            name="Change it",
-            value=f"`/setprefix` — server owner only",
-            inline=False
-        )
-        embed.set_footer(text="Lucky Bot Prefix System")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    # ══════════════════════════════════════════
-    #   NO PREFIX SYSTEM
-    #   Bot owner only — grants prefix-free usage
-    # ══════════════════════════════════════════
+    @commands.command(name="noprefix")
+    async def noprefix_prefix(self, ctx: commands.Context, member: discord.Member):
+        if not self._is_bot_owner(ctx.author.id):
+            await ctx.reply(
+                embed=discord.Embed(
+                    title="❌ Bot Owner Only",
+                    description="Only the bot owner can grant/revoke no-prefix access.",
+                    color=discord.Color.red(),
+                )
+            )
+            return
 
-    @commands.group(name='noprefix', invoke_without_command=True)
-    async def noprefix_group(self, ctx):
-        """No-prefix management. Bot owner only."""
-        if not self.is_bot_owner(ctx.author.id):
-            return await ctx.reply(embed=discord.Embed(
-                title="❌ Bot Owner Only",
-                description="Only the **bot creator** can manage no-prefix access!",
-                color=0xe74c3c
-            ))
-        users = self.bot.no_prefix_users
-        embed = discord.Embed(
-            title="🔇 No-Prefix Users",
-            description="\n".join([f"<@{uid}>" for uid in users]) or "None set",
-            color=0x3498db,
-            timestamp=datetime.datetime.utcnow()
-        )
-        embed.add_field(
-            name="Commands",
-            value=(
-                "`!noprefix add @user` — grant no-prefix\n"
-                "`!noprefix remove @user` — revoke no-prefix\n"
-                "`!noprefix list` — see all users\n"
-                "`!noprefix clear` — remove everyone"
-            ),
-            inline=False
-        )
-        embed.add_field(
-            name="What is no-prefix?",
-            value="Users with this can type `warn @user` instead of `!warn @user`",
-            inline=False
-        )
-        embed.set_footer(text="Lucky Bot • Bot Owner Only")
-        await ctx.send(embed=embed)
-
-    @noprefix_group.command(name='add')
-    async def noprefix_add(self, ctx, member: discord.Member):
-        if not self.is_bot_owner(ctx.author.id):
-            return await ctx.reply(embed=discord.Embed(
-                title="❌ Bot Owner Only", color=0xe74c3c))
-        self.bot.no_prefix_users.add(member.id)
-        embed = discord.Embed(
-            title="✅ No-Prefix Granted",
-            color=0x2ecc71,
-            timestamp=datetime.datetime.utcnow()
-        )
-        embed.add_field(name="User", value=member.mention)
-        embed.add_field(
-            name="What changed",
-            value=f"{member.mention} can now use all commands **without any prefix**!"
-        )
-        embed.set_footer(text="Lucky Bot • Bot Owner Only")
-        await ctx.reply(embed=embed)
-
-    @noprefix_group.command(name='remove')
-    async def noprefix_remove(self, ctx, member: discord.Member):
-        if not self.is_bot_owner(ctx.author.id):
-            return await ctx.reply(embed=discord.Embed(
-                title="❌ Bot Owner Only", color=0xe74c3c))
-        self.bot.no_prefix_users.discard(member.id)
-        await ctx.reply(embed=discord.Embed(
-            title="✅ No-Prefix Revoked",
-            description=f"{member.mention} now needs to use the prefix again.",
-            color=0x2ecc71
-        ))
-
-    @noprefix_group.command(name='list')
-    async def noprefix_list(self, ctx):
-        if not self.is_bot_owner(ctx.author.id):
-            return await ctx.reply(embed=discord.Embed(
-                title="❌ Bot Owner Only", color=0xe74c3c))
-        users = self.bot.no_prefix_users
-        await ctx.send(embed=discord.Embed(
-            title="🔇 No-Prefix Users",
-            description="\n".join([f"<@{uid}>" for uid in users]) or "None set",
-            color=0x3498db
-        ))
-
-    @noprefix_group.command(name='clear')
-    async def noprefix_clear(self, ctx):
-        if not self.is_bot_owner(ctx.author.id):
-            return await ctx.reply(embed=discord.Embed(
-                title="❌ Bot Owner Only", color=0xe74c3c))
-        count = len(self.bot.no_prefix_users)
-        self.bot.no_prefix_users.clear()
-        await ctx.reply(embed=discord.Embed(
-            title="🧹 No-Prefix Cleared",
-            description=f"Removed no-prefix access from **{count}** user(s).",
-            color=0x2ecc71
-        ))
-
-    # Slash version
-    @app_commands.command(name='noprefix', description='Manage no-prefix access (bot owner only)')
-    @app_commands.describe(action='add/remove/list/clear', member='Target member')
-    @app_commands.choices(action=[
-        app_commands.Choice(name='add — grant no-prefix', value='add'),
-        app_commands.Choice(name='remove — revoke no-prefix', value='remove'),
-        app_commands.Choice(name='list — see all users', value='list'),
-        app_commands.Choice(name='clear — remove everyone', value='clear'),
-    ])
-    async def noprefix_slash(self, interaction: discord.Interaction,
-                             action: str, member: discord.Member = None):
-        if not self.is_bot_owner(interaction.user.id):
-            return await interaction.response.send_message(embed=discord.Embed(
-                title="❌ Bot Owner Only",
-                description="Only the **bot creator** can manage no-prefix access!",
-                color=0xe74c3c
-            ), ephemeral=True)
-        if action == 'add' and member:
+        granted = member.id not in self.bot.no_prefix_users
+        if granted:
             self.bot.no_prefix_users.add(member.id)
-            await interaction.response.send_message(embed=discord.Embed(
-                title="✅ No-Prefix Granted",
-                description=f"{member.mention} can now use commands without prefix!",
-                color=0x2ecc71
-            ))
-        elif action == 'remove' and member:
-            self.bot.no_prefix_users.discard(member.id)
-            await interaction.response.send_message(embed=discord.Embed(
-                title="✅ Revoked",
-                description=f"{member.mention} needs prefix again.",
-                color=0x2ecc71
-            ))
-        elif action == 'list':
-            users = self.bot.no_prefix_users
-            await interaction.response.send_message(embed=discord.Embed(
-                title="🔇 No-Prefix Users",
-                description="\n".join([f"<@{uid}>" for uid in users]) or "None",
-                color=0x3498db
-            ), ephemeral=True)
-        elif action == 'clear':
-            count = len(self.bot.no_prefix_users)
-            self.bot.no_prefix_users.clear()
-            await interaction.response.send_message(embed=discord.Embed(
-                title="🧹 Cleared",
-                description=f"Removed no-prefix from **{count}** user(s).",
-                color=0x2ecc71
-            ))
+            message = f"✅ {member.mention} can now use commands with **no prefix**."
         else:
-            await interaction.response.send_message(embed=discord.Embed(
-                title="❌ Missing Member",
-                description="Please mention a member for add/remove!",
-                color=0xe74c3c
-            ), ephemeral=True)
+            self.bot.no_prefix_users.remove(member.id)
+            message = f"✅ Removed no-prefix access from {member.mention}."
+
+        await ctx.reply(embed=discord.Embed(title="No Prefix", description=message, color=discord.Color.green()))
+
+    @app_commands.command(name="noprefix", description="Grant or revoke no-prefix access (bot owner only)")
+    async def noprefix_slash(self, interaction: discord.Interaction, member: discord.Member):
+        if not self._is_bot_owner(interaction.user.id):
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="❌ Bot Owner Only",
+                    description="Only the bot owner can grant/revoke no-prefix access.",
+                    color=discord.Color.red(),
+                ),
+                ephemeral=True,
+            )
+            return
+
+        granted = member.id not in self.bot.no_prefix_users
+        if granted:
+            self.bot.no_prefix_users.add(member.id)
+            message = f"✅ {member.mention} can now use commands with **no prefix**."
+        else:
+            self.bot.no_prefix_users.remove(member.id)
+            message = f"✅ Removed no-prefix access from {member.mention}."
+
+        await interaction.response.send_message(
+            embed=discord.Embed(title="No Prefix", description=message, color=discord.Color.green())
+        )
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(Prefix(bot))
