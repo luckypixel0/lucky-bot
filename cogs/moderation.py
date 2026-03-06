@@ -253,7 +253,7 @@ class Moderation(commands.Cog):
                 description="You cannot warn yourself.",
                 color=0xe74c3c,
             ), None
-        blocked_embed = self._warning_target_block_embed(guild, author, member)
+        blocked_embed = self._warning_target_block_embed(member)
         if blocked_embed:
             return blocked_embed, None
         if self.has_god_bypass(member) and not self.is_god_tier(author):
@@ -1258,34 +1258,17 @@ class Moderation(commands.Cog):
     def _set_warns(self, guild_id, member_id, warns):
         self.warn_db.setdefault(guild_id, {})[member_id] = warns
 
-    def _extract_reason(self, args: str):
-        if not args:
-            return "No reason provided"
-        return args.split("?r", 1)[1].strip() if "?r" in args else "No reason provided"
-
-    def _mod_target_block_embed(self, guild, author, member, action_word="moderate"):
+    def _warning_target_block_embed(self, member):
         if member.bot:
             return discord.Embed(
                 title="❌ Invalid Target",
-                description=f"You cannot {action_word} a bot account.",
+                description="You cannot warn a bot account.",
                 color=0xe74c3c,
             )
-        if member.id == author.id:
-            return discord.Embed(
-                title="❌ Invalid Target",
-                description=f"You cannot {action_word} yourself.",
-                color=0xe74c3c,
-            )
-        if member.id == guild.owner_id or member.id in self.extraowners.get(guild.id, set()):
+        if member.id == member.guild.owner_id:
             return self.protected_error_embed(member)
-        if self.has_god_bypass(member) and not self.is_god_tier(author):
-            return self.bypass_error_embed(member)
-        return None
-
-    def _warning_target_block_embed(self, guild, author, member):
-        blocked = self._mod_target_block_embed(guild, author, member, action_word="warn")
-        if blocked:
-            return blocked
+        if member.id in self.extraowners.get(member.guild.id, set()):
+            return self.protected_error_embed(member)
         return None
 
     def _warnings_embed(self, member, warns):
