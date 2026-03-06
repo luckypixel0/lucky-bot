@@ -25,7 +25,8 @@ class Help(commands.Cog):
                 f"`{p}prefix` — Show current prefix\n"
                 f"`{p}setprefix <new>` — Change server prefix (owner only)\n"
                 f"`{p}setprefix reset` — Reset to default `!`\n"
-                f"`{p}noprefix @user` — Toggle no-prefix access (bot owner only)"
+                f"`{p}noprefix @user` — Toggle no-prefix access (bot owner only)\n"
+                f"`{p}ping` — Check bot latency"
             ),
             inline=False,
         )
@@ -50,6 +51,16 @@ class Help(commands.Cog):
     async def help_slash(self, interaction: discord.Interaction):
         await interaction.response.send_message(embed=self._build_help_embed(interaction.guild))
 
+
+    @commands.command(name="ping")
+    async def ping_prefix(self, ctx: commands.Context):
+        await ctx.reply(f"🏓 Pong! `{round(self.bot.latency * 1000)}ms`")
+
+    @app_commands.command(name="ping", description="Check bot latency")
+    async def ping_slash(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            f"🏓 Pong! `{round(self.bot.latency * 1000)}ms`"
+        )
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Help(bot))
