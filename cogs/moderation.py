@@ -1277,6 +1277,17 @@ class Moderation(commands.Cog):
         blocked = self._mod_target_block_embed(guild, author, member, action_word="warn")
         if blocked:
             return blocked
+    def _warning_target_block_embed(self, member):
+        if member.bot:
+            return discord.Embed(
+                title="❌ Invalid Target",
+                description="You cannot warn a bot account.",
+                color=0xe74c3c,
+            )
+        if member.id == member.guild.owner_id:
+            return self.protected_error_embed(member)
+        if member.id in self.extraowners.get(member.guild.id, set()):
+            return self.protected_error_embed(member)
         return None
 
     def _warnings_embed(self, member, warns):
