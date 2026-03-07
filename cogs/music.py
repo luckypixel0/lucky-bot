@@ -101,6 +101,19 @@ class YTDLSource(discord.PCMVolumeTransformer):
             'quiet': True,
             'no_warnings': True,
             'socket_timeout': 30,
+            'skip_unavailable_fragments': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Referer': 'https://www.youtube.com/',
+            },
+            'extractor_args': {
+                'youtube': {
+                    'skip': ['hls', 'dash'],
+                }
+            }
         }
         
         try:
@@ -108,10 +121,28 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 data = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=False))
             
             if data is None:
+                print("[Music] Error: No data returned from YouTube")
                 return None
             
-            filename = data['url'] if not stream else None
-            return cls(discord.FFmpegPCMAudio(data['url'], **{'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}), data=data)
+            # Get the actual audio URL
+            audio_url = data.get('url')
+            
+            if not audio_url:
+                print("[Music] Error: No audio URL found")
+                return None
+            
+            # Use FFmpeg to play audio with proper options
+            ffmpeg_options = {
+                'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -headers "User-Agent: Mozilla/5.0"',
+                'options': '-vn -bufsize 16M'
+            }
+            
+            try:
+                audio_source = discord.FFmpegPCMAudio(audio_url, **ffmpeg_options)
+                return cls(audio_source, data=data)
+            except Exception as e:
+                print(f"[Music] FFmpeg error: {e}")
+                return None
         except Exception as e:
             print(f"[Music] Error loading audio: {e}")
             return None
@@ -127,6 +158,19 @@ class YTDLSource(discord.PCMVolumeTransformer):
             'quiet': True,
             'no_warnings': True,
             'extract_flat': 'in_playlist',
+            'skip_unavailable_fragments': True,
+            'socket_timeout': 30,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            },
+            'extractor_args': {
+                'youtube': {
+                    'skip': ['hls', 'dash'],
+                }
+            }
         }
         
         try:
@@ -336,19 +380,29 @@ class Music(commands.Cog):
             else:
                 queue.current = track
                 queue.is_playing = True
-                ctx.voice_client.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(self.after_playing(ctx), self.bot.loop).result())
                 
-                embed = discord.Embed(
-                    title="🎵 Now Playing",
-                    description=f"**{source.title}**",
-                    color=COLOR_MUSIC
-                )
-                embed.add_field(name="Artist", value=source.uploader, inline=True)
-                embed.add_field(name="Duration", value=self.format_duration(source.duration), inline=True)
-                embed.add_field(name="Requested by", value=ctx.author.mention, inline=True)
-                embed.set_thumbnail(url=source.thumbnail)
-                
-                await msg.edit(embed=embed)
+                try:
+                    ctx.voice_client.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(self.after_playing(ctx), self.bot.loop).result())
+                    
+                    embed = discord.Embed(
+                        title="🎵 Now Playing",
+                        description=f"**{source.title}**",
+                        color=COLOR_MUSIC
+                    )
+                    embed.add_field(name="Artist", value=source.uploader, inline=True)
+                    embed.add_field(name="Duration", value=self.format_duration(source.duration), inline=True)
+                    embed.add_field(name="Requested by", value=ctx.author.mention, inline=True)
+                    embed.set_thumbnail(url=source.thumbnail)
+                    
+                    await msg.edit(embed=embed)
+                except Exception as e:
+                    embed = discord.Embed(
+                        title="❌ Playback Error",
+                        description=f"Could not play audio: {str(e)[:100]}",
+                        color=COLOR_ERROR
+                    )
+                    await msg.edit(embed=embed)
+                    return
             
             # Track stats
             if ctx.guild.id not in self.guild_stats:
@@ -1975,31 +2029,40 @@ class Music(commands.Cog):
     
     async def after_playing(self, ctx):
         """Called when a song finishes"""
-        queue = self.get_queue(ctx.guild.id)
-        
-        # Add to history
-        if queue.current:
-            if ctx.guild.id not in self.history:
-                self.history[ctx.guild.id] = []
-            self.history[ctx.guild.id].append(queue.current)
-            queue.history.append(queue.current)
-        
-        # Handle loop modes
-        if queue.loop_mode == 1:  # Loop song
-            queue.add_next(queue.current)
-        elif queue.loop_mode == 2:  # Loop queue
-            queue.add(queue.current)
-        
-        # Get next song
-        if queue.queue:
-            next_track = queue.skip()
-            queue.current = next_track
+        try:
+            queue = self.get_queue(ctx.guild.id)
             
-            source = next_track['source']
-            ctx.voice_client.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(self.after_playing(ctx), self.bot.loop).result())
-        else:
-            queue.is_playing = False
-            queue.current = None
+            # Add to history
+            if queue.current:
+                if ctx.guild.id not in self.history:
+                    self.history[ctx.guild.id] = []
+                self.history[ctx.guild.id].append(queue.current)
+                queue.history.append(queue.current)
+            
+            # Handle loop modes
+            if queue.loop_mode == 1:  # Loop song
+                if queue.current:
+                    queue.add_next(queue.current)
+            elif queue.loop_mode == 2:  # Loop queue
+                if queue.current:
+                    queue.add(queue.current)
+            
+            # Get next song
+            if queue.queue:
+                next_track = queue.skip()
+                queue.current = next_track
+                
+                try:
+                    source = next_track['source']
+                    if ctx.voice_client and not ctx.voice_client.is_playing():
+                        ctx.voice_client.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(self.after_playing(ctx), self.bot.loop).result())
+                except Exception as e:
+                    print(f"[Music] Error playing next track: {e}")
+            else:
+                queue.is_playing = False
+                queue.current = None
+        except Exception as e:
+            print(f"[Music] Error in after_playing: {e}")
 
 
 async def setup(bot):
