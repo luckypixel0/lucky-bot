@@ -488,7 +488,7 @@ class Music(commands.Cog):
                 embed.add_field(name="Voted by", value=ctx.author.mention, inline=False)
                 await ctx.send(embed=embed, delete_after=10)
     
-    @commands.hybrid_command(name="stop", aliases=["disconnect"])
+    @commands.hybrid_command(name="stop")
     async def stop(self, ctx):
         """Stop music and leave voice channel"""
         if not self.has_permission(ctx, "stop"):
@@ -1635,7 +1635,7 @@ class Music(commands.Cog):
         )
         await ctx.send(embed=embed, delete_after=10)
     
-    @commands.hybrid_command(name="leave", aliases=["disconnect"])
+    @commands.hybrid_command(name="leave")
     async def leave(self, ctx):
         """Leave voice channel"""
         if not ctx.voice_client:
