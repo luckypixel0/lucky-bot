@@ -8,37 +8,10 @@ def home():
     return "Lucky Bot is alive!", 200
 
 def run():
-    """Run Gunicorn server"""
-    import logging
-    log = logging.getLogger('werkzeug')
-    log.setLevel(logging.ERROR)
-    
-    from gunicorn.app.base import BaseApplication
-    
-    class StandaloneApplication(BaseApplication):
-        def __init__(self, app, options=None):
-            self.application = app
-            self.options = options or {}
-            super().__init__()
-        
-        def load_config(self):
-            for key, value in self.options.items():
-                self.cfg.set(key.lower(), value)
-        
-        def load(self):
-            return self.application
-    
-    options = {
-        'bind': '0.0.0.0:8080',
-        'workers': 1,
-        'worker_class': 'sync',
-        'timeout': 60,
-    }
-    
-    StandaloneApplication(app, options).run()
+    app.run(host="0.0.0.0", port=8080, debug=False)
 
 def keep_alive():
-    """Start server in background thread"""
+    """Start Flask server in background thread"""
     thread = threading.Thread(target=run)
     thread.daemon = True
     thread.start()
