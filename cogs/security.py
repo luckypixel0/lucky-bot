@@ -1564,7 +1564,7 @@ class Security(commands.Cog):
         await self.security_overview(ctx)
 
     @app_commands.command(name='antinuke', description='Manage antinuke protection')
-    @app_commands.describe(action='What to do', value='on/off or value')
+    @app_commands.describe(action='What to do')
     @app_commands.choices(action=[
         app_commands.Choice(name='on — enable antinuke',     value='on'),
         app_commands.Choice(name='off — disable antinuke',   value='off'),
