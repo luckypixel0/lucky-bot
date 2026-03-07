@@ -50,32 +50,61 @@ class Music(commands.Cog):
                 'socket_timeout': 30,
                 'http_headers': {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
+                },
+                'noplaylist': True,
+                'skip_unavailable_fragments': True
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                print(f"[Music] Searching for: {query}")
                 result = await asyncio.get_event_loop().run_in_executor(
                     None,
                     lambda: ydl.extract_info(query, download=False)
                 )
             
-            if result:
-                url = result.get('url')
-                title = result.get('title', 'Unknown')
-                duration = result.get('duration', 0)
-                uploader = result.get('uploader', 'Unknown')
-                thumbnail = result.get('thumbnail', '')
-                
-                return {
-                    'url': url,
-                    'title': title,
-                    'duration': duration,
-                    'uploader': uploader,
-                    'thumbnail': thumbnail
-                }
-            return None
+            if not result:
+                print("[Music] No result from yt-dlp")
+                return None
+            
+            # Get URL - try different methods
+            url = result.get('url')
+            
+            # If no direct URL, try formats
+            if not url and result.get('formats'):
+                print("[Music] Trying to get URL from formats")
+                for fmt in result.get('formats', []):
+                    if fmt.get('url'):
+                        url = fmt['url']
+                        break
+            
+            # If still no URL, try webpage_url
+            if not url:
+                url = result.get('webpage_url')
+                print(f"[Music] Using webpage_url: {url}")
+            
+            if not url:
+                print("[Music] ERROR: Could not find URL in result")
+                print(f"[Music] Result keys: {result.keys()}")
+                return None
+            
+            print(f"[Music] Got URL successfully")
+            
+            title = result.get('title', 'Unknown')
+            duration = result.get('duration', 0)
+            uploader = result.get('uploader', 'Unknown')
+            thumbnail = result.get('thumbnail', '')
+            
+            return {
+                'url': url,
+                'title': title,
+                'duration': duration,
+                'uploader': uploader,
+                'thumbnail': thumbnail
+            }
         except Exception as e:
             print(f"[Music] YouTube error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     @commands.hybrid_command(name="play", aliases=["p"])
@@ -103,10 +132,10 @@ class Music(commands.Cog):
         # Get YouTube URL
         track_info = await self.get_youtube_url(query)
         
-        if not track_info:
+        if not track_info or not track_info.get('url'):
             embed = discord.Embed(
                 title="❌ Not Found",
-                description=f"Could not find: **{query}**",
+                description=f"Could not find or load: **{query}**\n\nTry a different song name",
                 color=COLOR_ERROR
             )
             await msg.edit(embed=embed)
@@ -128,6 +157,17 @@ class Music(commands.Cog):
         
         # Try to play
         try:
+            if not track_info['url']:
+                embed = discord.Embed(
+                    title="❌ No Audio URL",
+                    description="Could not extract audio from video",
+                    color=COLOR_ERROR
+                )
+                await msg.edit(embed=embed)
+                return
+            
+            print(f"[Music] Creating FFmpeg audio from URL: {track_info['url'][:50]}...")
+            
             audio = discord.FFmpegPCMAudio(
                 track_info['url'],
                 before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
@@ -158,9 +198,12 @@ class Music(commands.Cog):
                 embed.set_thumbnail(url=track_info['thumbnail'])
             
             await msg.edit(embed=embed)
+            print("[Music] Now playing!")
             
         except Exception as e:
             print(f"[Music] Play error: {e}")
+            import traceback
+            traceback.print_exc()
             embed = discord.Embed(
                 title="❌ Playback Failed",
                 description=f"Error: {str(e)[:100]}",
