@@ -1,17 +1,18 @@
 from flask import Flask
-import threading
+from threading import Thread
 
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return "Lucky Bot is alive!", 200
+
+@app.get("/")
+def healthcheck():
+    return "Lucky Bot is alive! 🍀"
+
 
 def run():
-    app.run(host="0.0.0.0", port=8080, debug=False)
+    app.run(host="0.0.0.0", port=8080)
+
 
 def keep_alive():
-    """Start Flask server in background thread"""
-    thread = threading.Thread(target=run)
-    thread.daemon = True
+    thread = Thread(target=run, daemon=True)
     thread.start()
