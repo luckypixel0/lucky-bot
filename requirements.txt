@@ -5,3 +5,7 @@ aiohttp
 Pillow
 requests
 yt-dlp
+discord.py[voice]
+FFmpeg
+aiohttp
+python-dotenv
