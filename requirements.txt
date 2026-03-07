@@ -9,4 +9,3 @@ discord.py[voice]
 FFmpeg
 aiohttp
 python-dotenv
-gunicorn
