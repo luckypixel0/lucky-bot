@@ -13,7 +13,6 @@ def run():
     log = logging.getLogger('werkzeug')
     log.setLevel(logging.ERROR)
     
-    # Use Gunicorn instead of Flask dev server
     from gunicorn.app.base import BaseApplication
     
     class StandaloneApplication(BaseApplication):
