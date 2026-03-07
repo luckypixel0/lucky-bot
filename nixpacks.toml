@@ -1,11 +1,14 @@
 [phases.setup]
-nixPkgs = ["python311", "ffmpeg"]
+nixPkgs = ["python311", "ffmpeg", "libopus", "libsodium", "opus"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt"]
 
 [packages]
 ffmpeg
+libopus
+libsodium
+opus
 
 [start]
 cmd = "python main.py"
