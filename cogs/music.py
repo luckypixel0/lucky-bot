@@ -95,56 +95,48 @@ class YTDLSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         
         ydl_opts = {
-            'format': 'bestaudio/best',
+            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio',
             'noplaylist': True,
             'default_search': 'ytsearch',
             'quiet': True,
             'no_warnings': True,
             'socket_timeout': 30,
-            'skip_unavailable_fragments': True,
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
                 'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Referer': 'https://www.youtube.com/',
-            },
-            'extractor_args': {
-                'youtube': {
-                    'skip': ['hls', 'dash'],
-                }
             }
         }
         
         try:
+            print(f"[Music] Loading: {url}")
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 data = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=False))
             
             if data is None:
-                print("[Music] Error: No data returned from YouTube")
+                print("[Music] No data from YouTube")
                 return None
             
-            # Get the actual audio URL
             audio_url = data.get('url')
-            
             if not audio_url:
-                print("[Music] Error: No audio URL found")
+                print("[Music] No audio URL in data")
                 return None
             
-            # Use FFmpeg to play audio with proper options
+            print(f"[Music] Got audio URL, creating FFmpeg source")
+            
+            # Simpler FFmpeg options
             ffmpeg_options = {
-                'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -headers "User-Agent: Mozilla/5.0"',
-                'options': '-vn -bufsize 16M'
+                'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                'options': '-vn'
             }
             
-            try:
-                audio_source = discord.FFmpegPCMAudio(audio_url, **ffmpeg_options)
-                return cls(audio_source, data=data)
-            except Exception as e:
-                print(f"[Music] FFmpeg error: {e}")
-                return None
+            audio_source = discord.FFmpegPCMAudio(audio_url, **ffmpeg_options)
+            print(f"[Music] Audio source created successfully")
+            return cls(audio_source, data=data)
+            
         except Exception as e:
-            print(f"[Music] Error loading audio: {e}")
+            print(f"[Music] Error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     @staticmethod
@@ -912,7 +904,7 @@ class Music(commands.Cog):
     
     @commands.hybrid_command(name="search")
     async def search(self, ctx, *, query):
-        """Search for songs and select from results"""
+        """Search for songs and select from results with emoji reactions"""
         loading_embed = discord.Embed(
             title="🔄 Searching...",
             description=f"Looking for: **{query}**",
@@ -932,23 +924,132 @@ class Music(commands.Cog):
                 await msg.edit(embed=embed)
                 return
             
-            # Show top 5 results
+            # Show top 5 results with emoji numbers
             embed = discord.Embed(
                 title="🔍 Search Results",
-                description=f"Found {len(results)} results for: **{query}**\n\nReact to select or type number (1-5)",
+                description=f"Found {len(results)} results\n\nReact with emoji to select:",
                 color=COLOR_INFO
             )
+            
+            emoji_list = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
             
             for idx, result in enumerate(results[:5], 1):
                 title = result.get('title', 'Unknown')
                 duration = result.get('duration', 0)
                 embed.add_field(
-                    name=f"{idx}️⃣ {title[:60]}",
+                    name=f"{emoji_list[idx-1]} {title[:60]}",
                     value=f"⏱️ {self.format_duration(duration)}",
                     inline=False
                 )
             
             await msg.edit(embed=embed)
+            
+            # Add emoji reactions
+            for emoji in emoji_list[:len(results[:5])]:
+                await msg.add_reaction(emoji)
+            
+            # Wait for reaction
+            def check(reaction, user):
+                return user == ctx.author and str(reaction.emoji) in emoji_list and reaction.message.id == msg.id
+            
+            try:
+                reaction, user = await self.bot.wait_for('reaction_add', timeout=60.0, check=check)
+                selected_index = emoji_list.index(str(reaction.emoji))
+                selected = results[selected_index]
+                
+                # Auto play the selected song
+                url = f"https://www.youtube.com/watch?v={selected['id']}"
+                
+                # Send to play function
+                loading_embed = discord.Embed(
+                    title="🎵 Loading...",
+                    description=f"Playing: **{selected.get('title', 'Unknown')}**",
+                    color=COLOR_INFO
+                )
+                await msg.edit(embed=loading_embed)
+                
+                # Check voice channel
+                if not ctx.author.voice:
+                    embed = discord.Embed(
+                        title="❌ Not in Voice",
+                        description="You must be in a voice channel",
+                        color=COLOR_ERROR
+                    )
+                    await msg.edit(embed=embed)
+                    return
+                
+                # Get audio source
+                source = await YTDLSource.from_url(url, loop=self.bot.loop)
+                if not source:
+                    embed = discord.Embed(
+                        title="❌ Load Failed",
+                        description="Could not load audio stream",
+                        color=COLOR_ERROR
+                    )
+                    await msg.edit(embed=embed)
+                    return
+                
+                # Create track
+                track = {
+                    'title': source.title,
+                    'url': source.url,
+                    'duration': source.duration,
+                    'uploader': source.uploader,
+                    'thumbnail': source.thumbnail,
+                    'requester': ctx.author,
+                    'source': source
+                }
+                
+                # Join voice
+                queue = self.get_queue(ctx.guild.id)
+                vc = ctx.author.voice.channel
+                
+                if ctx.voice_client is None:
+                    try:
+                        await vc.connect()
+                    except Exception as e:
+                        embed = discord.Embed(
+                            title="❌ Connection Failed",
+                            description=f"Could not connect to voice: {str(e)}",
+                            color=COLOR_ERROR
+                        )
+                        await msg.edit(embed=embed)
+                        return
+                
+                # Play
+                if ctx.voice_client.is_playing():
+                    queue.add(track)
+                    
+                    embed = discord.Embed(
+                        title="✅ Added to Queue",
+                        description=f"**{source.title}**",
+                        color=COLOR_SUCCESS
+                    )
+                    embed.add_field(name="Position", value=f"#{len(queue.queue)}", inline=True)
+                    embed.set_thumbnail(url=source.thumbnail)
+                    await msg.edit(embed=embed)
+                else:
+                    queue.current = track
+                    queue.is_playing = True
+                    ctx.voice_client.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(self.after_playing(ctx), self.bot.loop).result())
+                    
+                    embed = discord.Embed(
+                        title="🎵 Now Playing",
+                        description=f"**{source.title}**",
+                        color=COLOR_MUSIC
+                    )
+                    embed.add_field(name="Artist", value=source.uploader, inline=True)
+                    embed.add_field(name="Duration", value=self.format_duration(source.duration), inline=True)
+                    embed.set_thumbnail(url=source.thumbnail)
+                    await msg.edit(embed=embed)
+                    
+            except asyncio.TimeoutError:
+                embed = discord.Embed(
+                    title="⏱️ Selection Timeout",
+                    description="No emoji reaction received within 60 seconds",
+                    color=COLOR_WARNING
+                )
+                await msg.edit(embed=embed)
         
         except Exception as e:
             embed = discord.Embed(
