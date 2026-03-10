@@ -288,7 +288,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Lucky Bot • lucky.gg"
+    return "Lucky Bot • https://discord.gg/q2DdzFxheA"
 
 def _run_server():
     app.run(host="0.0.0.0", port=19346)
