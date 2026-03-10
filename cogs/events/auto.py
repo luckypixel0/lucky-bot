@@ -23,7 +23,7 @@ class Autorole(Cog):
                         f"🍀 **Thanks for adding Lucky!**\n\n"
                         f"🔮 My default prefix is `{prefix}`\n"
                         f"🔮 Use `{prefix}help` to see all commands\n"
-                        f"🔮 For support visit **[lucky.gg]({serverLink})**"
+                        f"🔮 For support visit **[https://discord.gg/q2DdzFxheA]({serverLink})**"
                     ),
                     color=0x57F287,
                 )
@@ -31,7 +31,7 @@ class Autorole(Cog):
                     url=entry.user.avatar.url if entry.user.avatar else entry.user.default_avatar.url
                 )
                 embed.set_author(name=guild.name, icon_url=guild.me.display_avatar.url)
-                embed.set_footer(text="Lucky Bot • lucky.gg")
+                embed.set_footer(text="Lucky Bot • https://discord.gg/q2DdzFxheA")
 
                 support_btn = Button(label="Support", style=discord.ButtonStyle.link, url=serverLink)
                 view = View()
