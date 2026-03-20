@@ -112,3 +112,7 @@ class Mention(commands.Cog):
             await message.channel.send(embed=embed, view=view)
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Mention(bot))

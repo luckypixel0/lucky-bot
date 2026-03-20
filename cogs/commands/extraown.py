@@ -167,3 +167,7 @@ class ConfirmView(View):
         self.stop()
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Extraowner(bot))

@@ -151,3 +151,7 @@ class Status(commands.Cog):
         return "\n".join(activity_list) if activity_list else None
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Status(bot))

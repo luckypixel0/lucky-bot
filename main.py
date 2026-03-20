@@ -291,7 +291,8 @@ def home():
     return "Lucky Bot • lucky.gg"
 
 def _run_server():
-    app.run(host="0.0.0.0", port=19346)
+    port = int(os.getenv("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
 
 def keep_alive():
     Thread(target=_run_server, daemon=True).start()

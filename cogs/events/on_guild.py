@@ -166,3 +166,7 @@ class Guild(Cog):
             logging.error(f"[Lucky] on_guild_remove error: {e}")
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Guild(bot))

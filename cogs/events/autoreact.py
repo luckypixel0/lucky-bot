@@ -52,3 +52,7 @@ class AutoReactListener(commands.Cog):
             break
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(AutoReactListener(bot))

@@ -122,3 +122,7 @@ class greet(commands.Cog):
         self.processing.discard(guild.id)
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(greet(bot))

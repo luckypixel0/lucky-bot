@@ -46,3 +46,7 @@ class Autorole(Cog):
                     print(f"[Lucky] Could not DM guild adder: {e}")
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Autorole(bot))

@@ -131,3 +131,7 @@ class Invcrole(commands.Cog):
 
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Invcrole(bot))

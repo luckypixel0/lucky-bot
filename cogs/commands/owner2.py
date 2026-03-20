@@ -597,3 +597,7 @@ class Global(commands.Cog):
             await ctx.send(f"❌ | {member.mention}'s nickname is not currently being frozen.")
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Global(bot))

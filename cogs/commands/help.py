@@ -270,3 +270,7 @@ class Help(Cog, name="help"):
     self.help_command = self._original_help_command
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Help(bot))

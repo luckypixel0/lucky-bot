@@ -212,3 +212,7 @@ class Block(commands.Cog):
       await paginator.paginate()
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Block(bot))

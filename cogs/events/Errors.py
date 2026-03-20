@@ -111,3 +111,7 @@ class Errors(Cog):
             return
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Errors(bot))

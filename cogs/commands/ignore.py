@@ -329,3 +329,7 @@ class Ignore(commands.Cog):
         await ctx.reply(embed=embed, mention_author=False)
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Ignore(bot))

@@ -186,3 +186,7 @@ class Steal(commands.Cog):
 
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Steal(bot))

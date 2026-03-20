@@ -133,3 +133,7 @@ class FilterCog(commands.Cog):
         await ctx.send(embed=discord.Embed(description="Filter disabled.", color=discord.Color.red()))
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(FilterCog(bot))

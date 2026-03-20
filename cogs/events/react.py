@@ -29,3 +29,7 @@ class React(commands.Cog):
                 print(f"[Lucky] React error: {e}")
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(React(bot))

@@ -1078,3 +1078,7 @@ class Extra(commands.Cog):
     await ctx.reply(embed=confirm_embed)
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Extra(bot))

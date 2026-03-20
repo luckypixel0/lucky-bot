@@ -447,3 +447,7 @@ class Blacklist(commands.Cog):
                 await ctx.reply(embed=embed)
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Blacklist(bot))

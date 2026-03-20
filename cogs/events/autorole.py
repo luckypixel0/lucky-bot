@@ -61,3 +61,7 @@ class Autorole2(Cog):
                 logger.error(f"[Lucky] Autorole unexpected error: {e}")
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(Autorole2(bot))

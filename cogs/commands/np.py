@@ -610,3 +610,7 @@ class NoPrefix(commands.Cog):
         await ctx.reply(embed=embed, view=view)
 
 # Lucky Bot — Rewritten
+
+
+async def setup(bot):
+    await bot.add_cog(NoPrefix(bot))
