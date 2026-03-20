@@ -13,6 +13,7 @@ from utils.Tools import *
 from utils.config import OWNER_IDS
 from core import Cog, Lucky, Context
 import sqlite3
+import aiohttp
 import os
 import requests
 import numpy as np

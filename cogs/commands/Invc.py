@@ -101,6 +101,7 @@ class Invcrole(commands.Cog):
                     elif not after.channel and role in member.roles:
                         await self.remove_role_with_retry(member, role, reason="Member Left VC | Lucky Invcrole")
         except discord.Forbidden:
+            pass
         except Exception as e:
 
     async def add_role_with_retry(self, member, role, reason, retries=5):
@@ -131,7 +132,3 @@ class Invcrole(commands.Cog):
 
 
 # Lucky Bot — Rewritten
-
-
-async def setup(bot):
-    await bot.add_cog(Invcrole(bot))

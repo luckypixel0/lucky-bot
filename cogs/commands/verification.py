@@ -444,7 +444,7 @@ class VerificationSetupView(discord.ui.View):
         self.log_channel = None
         self.verification_method = None
 
-    @discord.ui.channel_select(placeholder="Select verification channel...", channel_types=[discord.ChannelType.text])
+    @discord.ui.select(cls=discord.ui.ChannelSelect, placeholder="Select verification channel...", channel_types=[discord.ChannelType.text])
     async def verification_channel_select(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
         if interaction.user != self.ctx.author:
             return await interaction.response.send_message("Only the command author can use this.", ephemeral=True)
@@ -452,7 +452,7 @@ class VerificationSetupView(discord.ui.View):
         await interaction.response.send_message(
             f"🍀 Verification channel set to {self.verification_channel.mention}", ephemeral=True)
 
-    @discord.ui.channel_select(placeholder="Select log channel (optional)...", channel_types=[discord.ChannelType.text], min_values=0)
+    @discord.ui.select(cls=discord.ui.ChannelSelect, placeholder="Select log channel (optional)...", channel_types=[discord.ChannelType.text], min_values=0)
     async def log_channel_select(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
         if interaction.user != self.ctx.author:
             return await interaction.response.send_message("Only the command author can use this.", ephemeral=True)

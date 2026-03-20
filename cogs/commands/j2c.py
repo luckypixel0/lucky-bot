@@ -108,6 +108,7 @@ class JoinToCreate(commands.Cog):
                 ))
                 await db.commit()
         except Exception as e:
+            pass
 
     async def delete_private_channel(self, vc_id: int):
         async with aiosqlite.connect(self.db_path) as db:
