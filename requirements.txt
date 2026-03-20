@@ -1,5 +1,5 @@
 # Lucky Bot — Requirements
-discord.py>=2.3.0
+discord.py>=2.4.0
 jishaku
 mcstatus
 aiohttp
@@ -24,3 +24,7 @@ python-dateutil
 deep-translator==1.11.4
 discord-ext-menus @ git+https://github.com/Rapptz/discord-ext-menus
 psutil
+pytz
+aiofiles
+prodia
+discord-ext-games
